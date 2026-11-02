@@ -1,0 +1,2 @@
+-keep class com.inkwell.mode.** { *; }
+-keep class de.robv.android.xposed.** { *; }

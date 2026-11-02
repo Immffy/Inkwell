@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 纸白底 -->
+    <path
+        android:fillColor="#F5F3EE"
+        android:pathData="M30,30h48v48H30z" />
+    <!-- 墨滴：上尖下圆，是墨水/墨境的核心意象 -->
+    <path
+        android:fillColor="#2B2B2B"
+        android:pathData="M54,36 C54,36 42,52 42,60 a12,12 0 0,0 24,0 C66,52 54,36 54,36 Z" />
+    <!-- 墨滴高光 -->
+    <path
+        android:fillColor="#5A5A5A"
+        android:pathData="M49,60 a5,5 0 0,0 5,-5 a5,5 0 0,0 -5,5" />
+    <!-- 底部彩色四点：代表彩色墨水屏的有限色域 -->
+    <path
+        android:fillColor="#C8453B"
+        android:pathData="M36,82h7v5h-7z" />
+    <path
+        android:fillColor="#3F7B4C"
+        android:pathData="M46,82h7v5h-7z" />
+    <path
+        android:fillColor="#3A5F94"
+        android:pathData="M56,82h7v5h-7z" />
+    <path
+        android:fillColor="#D8A93A"
+        android:pathData="M66,82h7v5h-7z" />
+</vector>
