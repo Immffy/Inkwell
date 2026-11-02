@@ -55,17 +55,10 @@ android {
         buildConfig = true
     }
 
-    // APK 文件名自动带版本号：eink-mode-v0.1.0.apk
-    // 避免下载一堆都叫 app-debug.apk 的文件分不清
-    androidComponents {
-        onVariants(selector().all) { variant ->
-            variant.outputs.forEach { output ->
-                output.outputFileName.set(
-                    "墨境-v${computedVersionName}${if (variant.name == "debug") "-debug" else ""}.apk"
-                )
-            }
-        }
-    }
+    // 注意：不要再往这里加 androidComponents { onVariants(selector().all) } 做 APK 重命名。
+    // 该写法在 Kotlin DSL 里会因 selector() 未导入而报
+    // "Function invocation 'all()' expected" / "Unresolved reference: outputFileName"。
+    // APK 文件名统一由 CI 的 Collect APK 步骤处理。
 
     buildTypes {
         release {

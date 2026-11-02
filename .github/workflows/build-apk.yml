@@ -1,23 +1,16 @@
 name: Build APK
 
 on:
-  workflow_dispatch:    # 手动触发：手机上点一下就能编译
+  workflow_dispatch:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]      # 打 v0.2.0 这类 tag 时自动发 Release
+    tags: [ 'v*' ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # tag 触发时需要权限创建 Release
-    env:
-      # 不使用 android-actions/setup-android —— 该 action 在新版 runner 上
-      # 会尝试安装已被 Google 移除的 "tools" 包而失败。
-      # 改为让 AGP 自行下载所需 SDK 组件，这里只预置许可证。
-      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
-      GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -28,20 +21,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 固定 Gradle 版本，避免 runner 预装版本与 AGP 不兼容
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # 预置 SDK 许可证哈希，避免 Gradle 自动下载 SDK 时卡在协议确认
+      # 复用运行机预装的 Android SDK，不要自己设空目录的 ANDROID_HOME
+      # （那样会逼 AGP 从头下载整套 SDK，最终超时失败）
       - name: Accept Android SDK licenses
         run: |
-          mkdir -p "$ANDROID_HOME/licenses"
-          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$ANDROID_HOME/licenses/android-sdk-license"
-          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$ANDROID_HOME/licenses/intel-android-extra-license"
-          ls -la "$ANDROID_HOME/licenses"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          mkdir -p "$SDK/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$SDK/licenses/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$SDK/licenses/android-sdk-preview-license"
+          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$SDK/licenses/intel-android-extra-license"
+          ls -la "$SDK"
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
@@ -50,6 +46,9 @@ jobs:
         run: |
           mkdir -p out
           find app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          VER=$(grep -E 'val version(Major|Minor|Patch) = ' app/build.gradle.kts | grep -oE '[0-9]+' | paste -sd.)
+          echo "检测到版本 v$VER"
+          for f in out/*.apk; do mv "$f" "out/墨境-v$VER.apk"; done
           ls -la out/
 
       - name: Upload APK artifact
@@ -59,7 +58,6 @@ jobs:
           path: out/*.apk
           retention-days: 30
 
-      # 只有 push tag 时才创建 Release
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -69,15 +67,15 @@ jobs:
             ## 安装
 
             1. 下载下面的 APK（debug 版即可用）
-            2. 若装过旧版本，先卸载
-            3. LSPosed → 模块 → 启用 → **勾作用域「系统框架 / android」**
+            2. 已装旧版可**直接覆盖安装**，不用卸载
+            3. LSPosed → 模块 → 启用 → **勾作用域「系统框架 / android」和「墨境」**
             4. **重启手机**
 
-            详细步骤见仓库内《发布指南.md》。
+            恢复默认显示：主界面红色按钮，或下拉通知栏的「墨境」磁贴。
 
             ## 更新日志
 
-            见 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            见 CHANGELOG.md
           files: out/*.apk
           draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
