@@ -110,16 +110,27 @@ object EinkPrefs {
         }.toMap()
     }
 
+    /** 黑白名单：只存包名集合（不再按包配档位，简化为「名单内用黑白档」） */
+    fun getAppRulesSet(ctx: Context): Set<String> {
+        val raw = prefs(ctx).getString(K_APP_RULES, "") ?: ""
+        if (raw.isBlank()) return emptySet()
+        return raw.split(";").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+    }
+
+    fun putAppRuleRaw(ctx: Context, pkgs: Set<String>) {
+        prefs(ctx).edit().putString(K_APP_RULES, pkgs.joinToString(";")).apply()
+    }
+
     fun putAppRule(ctx: Context, pkg: String, preset: String) {
-        val m = getAppRules(ctx).toMutableMap()
-        m[pkg] = preset
-        prefs(ctx).edit().putString(K_APP_RULES, m.entries.joinToString(";") { "${it.key}=${it.value}" }).apply()
+        val m = getAppRulesSet(ctx).toMutableSet()
+        m.add(pkg)
+        putAppRuleRaw(ctx, m)
     }
 
     fun removeAppRule(ctx: Context, pkg: String) {
-        val m = getAppRules(ctx).toMutableMap()
+        val m = getAppRulesSet(ctx).toMutableSet()
         m.remove(pkg)
-        prefs(ctx).edit().putString(K_APP_RULES, m.entries.joinToString(";") { "${it.key}=${it.value}" }).apply()
+        putAppRuleRaw(ctx, m)
     }
 
     /**

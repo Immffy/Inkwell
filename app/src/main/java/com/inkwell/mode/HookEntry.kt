@@ -150,6 +150,7 @@ class HookEntry : IXposedHookLoadPackage {
                             if (ctx != null) {
                                 systemContext = ctx
                                 XLog.i("system context captured")
+                                registerControlReceiver(ctx)
                             }
                         } catch (t: Throwable) {
                             XLog.e("getContext failed", t)
@@ -161,6 +162,49 @@ class HookEntry : IXposedHookLoadPackage {
             } catch (t: Throwable) {
                 XLog.w("cannot hook $name: ${t.message}")
             }
+        }
+    }
+
+    /**
+     * 注册控制广播接收器。
+     *
+     * 这是「不依赖 root」的即时通道：App 直接发广播，模块立刻应用，
+     * 不用等 2 秒轮询。若 ROM 拦掉广播，文件通道仍会在 2 秒内兜底生效。
+     *
+     * 注册在 system_server 的系统 Context 上，不受 Android 8+ 隐式广播限制
+     * （该限制针对静态注册，且系统进程本身豁免）。
+     */
+    private fun registerControlReceiver(ctx: Context) {
+        try {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: android.content.Intent) {
+                    if (intent.action != ControlContract.ACTION_APPLY) return
+                    try {
+                        if (intent.hasExtra(ControlContract.EXTRA_ENABLED)) {
+                            PropConfig.pushedEnabled = intent.getBooleanExtra(ControlContract.EXTRA_ENABLED, true)
+                        }
+                        if (intent.hasExtra(ControlContract.EXTRA_SAT)) {
+                            PropConfig.pushedSat = intent.getFloatExtra(ControlContract.EXTRA_SAT, 0.45f)
+                            PropConfig.pushedBlack = intent.getFloatExtra(ControlContract.EXTRA_BLACK, 0.16f)
+                            PropConfig.pushedWhite = intent.getFloatExtra(ControlContract.EXTRA_WHITE, 0.92f)
+                        }
+                        if (intent.hasExtra(ControlContract.EXTRA_PRESET)) {
+                            PropConfig.pushedPreset = intent.getStringExtra(ControlContract.EXTRA_PRESET)
+                        }
+                        XLog.i("broadcast received: enabled=${PropConfig.pushedEnabled}")
+                        applyNow()
+                        // 应用后清掉瞬时值，后续以配置文件为准（保持一致）
+                        PropConfig.clearPushed()
+                    } catch (t: Throwable) {
+                        XLog.e("onReceive failed", t)
+                    }
+                }
+            }
+            val filter = android.content.IntentFilter(ControlContract.ACTION_APPLY)
+            ctx.registerReceiver(receiver, filter)
+            XLog.i("control receiver registered (root-free instant channel)")
+        } catch (t: Throwable) {
+            XLog.e("register receiver failed", t)
         }
     }
 
@@ -186,7 +230,11 @@ class HookEntry : IXposedHookLoadPackage {
         try {
             ensureMethod()
             if (!PropConfig.isEnabled()) {
-                setMatrixMethod?.invoke(dtm, OUR_LEVEL, null)
+                // 关闭效果：下发单位矩阵而非 null。
+                // 效果等价（数学上不改变颜色），但更兼容——部分 ROM 对 null 处理有缺陷，
+                // 且单位矩阵能继续占住 level 999，防止被其他服务覆盖后丢失档位。
+                setMatrixMethod?.invoke(dtm, OUR_LEVEL, ColorMatrixBuilder.identity())
+                XLog.i("disabled -> identity matrix (原色)")
                 return
             }
             val p = currentParams()

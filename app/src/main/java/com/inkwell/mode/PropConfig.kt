@@ -1,29 +1,43 @@
 package com.inkwell.mode
 
+import java.io.File
+
 /**
- * 模块端（运行在 system_server 进程）读取配置的通道。
+ * 模块侧（运行在 system_server）读取配置。
  *
- * 为什么用 SystemProperties 而不是 SharedPreferences：
- *   1. system_server 无法可靠读取其他 App 的 /data/data 私有文件；
- *   2. `persist.` 前缀属性会写入 /data/property，**重启后依然保留**——
- *      这意味着效果开机自动生效，App 不需要常驻后台。
+ * 读取优先级：
+ *   ① 文件 /data/local/tmp/inkwell.conf
+ *      —— root-free 主通道。system_server（uid 1000）可读该目录。
+ *         App 写入并 chmod 644，无需任何 root 权限。
+ *         persist 到磁盘 → 重启后按上次开关状态恢复（关了就是关了）。
  *
- * App 端（有 root）通过 `setprop persist.inkwell.sat 0.45` 写入，
- * 模块端反射 android.os.SystemProperties 读取。
+ *   ② SystemProperties persist.inkwell.*
+ *      —— 需 root 才能写。有则用（开机更早生效），没有也不影响。
+ *
+ * 广播收到的值存在内存中优先使用（即时生效），随后被文件轮询覆盖为一致值。
  */
 object PropConfig {
 
-    const val P_SAT = "persist.inkwell.sat"
-    const val P_BLACK = "persist.inkwell.black"
-    const val P_WHITE = "persist.inkwell.white"
-    const val P_ENABLED = "persist.inkwell.enabled"
-    const val P_PRESET = "persist.inkwell.preset"
-
-    /** 使用黑白档的包名列表文件（由 App 写入并 chmod 644） */
-    const val BW_APPS_FILE = "/data/local/tmp/inkwell_bw_apps.txt"
+    private const val P_SAT = "persist.inkwell.sat"
+    private const val P_BLACK = "persist.inkwell.black"
+    private const val P_WHITE = "persist.inkwell.white"
+    private const val P_ENABLED = "persist.inkwell.enabled"
+    private const val P_PRESET = "persist.inkwell.preset"
 
     /** 轮询间隔 */
     const val POLL_MS = 2000L
+
+    /** 广播即时值（未收到则为 null，回落到文件/属性） */
+    @Volatile
+    var pushedEnabled: Boolean? = null
+    @Volatile
+    var pushedSat: Float? = null
+    @Volatile
+    var pushedBlack: Float? = null
+    @Volatile
+    var pushedWhite: Float? = null
+    @Volatile
+    var pushedPreset: String? = null
 
     private var sysPropsGet: java.lang.reflect.Method? = null
     private var sysPropsGetFloat: java.lang.reflect.Method? = null
@@ -34,16 +48,14 @@ object PropConfig {
             val cls = Class.forName("android.os.SystemProperties")
             sysPropsGet = cls.getDeclaredMethod("get", String::class.java, String::class.java)
             sysPropsGetFloat = cls.getDeclaredMethod("getFloat", String::class.java, Float::class.javaPrimitiveType)
-        } catch (t: Throwable) {
-            XLog.e("SystemProperties reflect failed", t)
-        }
+        } catch (_: Throwable) { /* 无 SystemProperties 也能工作（走文件通道） */ }
     }
 
     fun get(key: String, def: String): String {
         ensureMethods()
         return try {
             sysPropsGet?.invoke(null, key, def) as? String ?: def
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             def
         }
     }
@@ -51,50 +63,88 @@ object PropConfig {
     fun getFloat(key: String, def: Float): Float {
         ensureMethods()
         return try {
-            sysPropsGetFloat?.invoke(null, key, def) as? Float ?: def
-        } catch (t: Throwable) {
-            // 部分 ROM 可能没有 getFloat，退回字符串解析
+            val v = sysPropsGetFloat?.invoke(null, key, def) as? Float
+            v ?: get(key, def.toString()).toFloatOrNull() ?: def
+        } catch (_: Throwable) {
             get(key, def.toString()).toFloatOrNull() ?: def
         }
     }
 
-    fun isEnabled(): Boolean = get(P_ENABLED, "1") == "1"
+    /** 效果是否开启。默认 true，但一旦用户关过，文件会记录 0 并持久生效。 */
+    fun isEnabled(): Boolean {
+        pushedEnabled?.let { return it }
+        val conf = ControlContract.read()
+        if (conf.sat != null || conf.black != null || conf.white != null || conf.preset.isNotBlank()) {
+            return conf.enabled == 1
+        }
+        return get(P_ENABLED, "1") == "1"
+    }
 
     /** 读取当前生效参数 */
     fun loadParams(): EinkParams {
+        pushedSat?.let { s ->
+            return EinkParams(
+                saturation = s,
+                black = pushedBlack ?: EinkParams.KALEIDO3.black,
+                white = pushedWhite ?: EinkParams.KALEIDO3.white
+            )
+        }
+
+        val conf = ControlContract.read()
+        if (conf.sat != null || conf.black != null || conf.white != null || conf.preset.isNotBlank()) {
+            val base = if (conf.preset.isNotBlank()) EinkParams.byName(conf.preset) else EinkParams.KALEIDO3
+            return EinkParams(
+                saturation = conf.sat ?: base.saturation,
+                black = conf.black ?: base.black,
+                white = conf.white ?: base.white
+            )
+        }
+
+        // 回落到 SystemProperties
         val preset = get(P_PRESET, "")
         val base = if (preset.isNotBlank()) EinkParams.byName(preset) else EinkParams.KALEIDO3
-        // 属性存在则用属性值（自定义微调），否则用预设值
         val sat = get(P_SAT, "")
         val blk = get(P_BLACK, "")
         val wht = get(P_WHITE, "")
         return EinkParams(
             saturation = sat.toFloatOrNull() ?: base.saturation,
             black = blk.toFloatOrNull() ?: base.black,
-            white = wht.toFloatOrNull() ?: base.white,
-            levels = base.levels, grain = base.grain,
-            cfa = base.cfa, cellPx = base.cellPx
+            white = wht.toFloatOrNull() ?: base.white
         )
     }
 
-    /** 读取黑名单（这些包名使用黑白纸质档） */
     fun loadBwApps(): Set<String> {
+        val fromConf = ControlContract.read().bwApps
+        if (fromConf.isNotEmpty()) return fromConf
         return try {
-            val f = java.io.File(BW_APPS_FILE)
+            val f = File(ControlContract.BW_APPS_FILE)
             if (!f.exists()) return emptySet()
             f.readLines().map { it.trim() }.filter { it.isNotBlank() }.toSet()
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             emptySet()
         }
     }
 
-    /** 配置指纹，用于判断是否需要重新应用 */
+    /** 配置指纹：内容变化才重新应用 */
     fun fingerprint(): String {
+        val conf = try {
+            File(ControlContract.CONF_FILE).takeIf { it.exists() }?.readText() ?: ""
+        } catch (_: Throwable) { "" }
         return listOf(
-            get(P_ENABLED, "1"),
-            get(P_PRESET, ""),
-            get(P_SAT, ""), get(P_BLACK, ""), get(P_WHITE, "")
+            conf,
+            get(P_ENABLED, "1"), get(P_PRESET, ""),
+            get(P_SAT, ""), get(P_BLACK, ""), get(P_WHITE, ""),
+            pushedEnabled?.toString() ?: "", pushedSat?.toString() ?: ""
         ).joinToString("|")
+    }
+
+    /** 广播收到后立即清空 pushed 值，让后续轮询以文件为准（保持一致） */
+    fun clearPushed() {
+        pushedEnabled = null
+        pushedSat = null
+        pushedBlack = null
+        pushedWhite = null
+        pushedPreset = null
     }
 }
 
