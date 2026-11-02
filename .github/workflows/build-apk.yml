@@ -1,16 +1,21 @@
 name: Build APK
 
 on:
-  workflow_dispatch:    # 手动触发：手机上点一下就能编译
+  workflow_dispatch:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]      # 打 v0.2.0 这类 tag 时自动发 Release
+    tags: [ 'v*' ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # tag 触发时需要权限创建 Release
+      contents: write
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,14 +25,18 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # 固定 Gradle 版本，避免 runner 预装版本与 AGP 不兼容
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$ANDROID_HOME/licenses/intel-android-extra-license"
+          ls -la "$ANDROID_HOME/licenses"
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
@@ -45,7 +54,6 @@ jobs:
           path: out/*.apk
           retention-days: 30
 
-      # 只有 push tag 时才创建 Release
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -56,14 +64,14 @@ jobs:
 
             1. 下载下面的 APK（debug 版即可用）
             2. 若装过旧版本，先卸载
-            3. LSPosed → 模块 → 启用 → **勾作用域「系统框架 / android」**
-            4. **重启手机**
+            3. LSPosed → 模块 → 启用 → 勾作用域「系统框架 / android」
+            4. 重启手机
 
-            详细步骤见仓库内《怎么用.md》。
+            详细步骤见仓库内《发布指南.md》
 
             ## 更新日志
 
-            见 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            见 CHANGELOG.md
           files: out/*.apk
           draft: false
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
