@@ -64,6 +64,8 @@ object EinkPrefs {
     /** 按 App 包名配置的档位，value 为预设名 */
     const val K_APP_RULES = "app_rules"
 
+    const val DEFAULT_PRESET = "Kaleido 3（默认）"
+
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -97,7 +99,16 @@ object EinkPrefs {
     fun setEnabled(ctx: Context, on: Boolean) =
         prefs(ctx).edit().putBoolean(K_ENABLED, on).apply()
 
-    fun getPreset(ctx: Context) = prefs(ctx).getString(K_PRESET, "Kaleido 3（默认）")
+    /**
+     * 返回非空 String。
+     *
+     * ⚠️ 不要写成 `= prefs(ctx).getString(K_PRESET, DEF)` —— SharedPreferences.getString
+     * 返回的是 String?，Kotlin 会推断出可空类型，调用方传入 String 形参时直接编译报错：
+     *   "Type mismatch: inferred type is String? but String was expected"
+     * 必须显式标注 : String 并用 ?: 兜底。
+     */
+    fun getPreset(ctx: Context): String =
+        prefs(ctx).getString(K_PRESET, DEFAULT_PRESET) ?: DEFAULT_PRESET
     fun setPreset(ctx: Context, name: String) =
         prefs(ctx).edit().putString(K_PRESET, name).apply()
 
