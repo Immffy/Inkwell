@@ -11,10 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
-      GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
     steps:
       - uses: actions/checkout@v4
@@ -32,11 +28,14 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          mkdir -p "$ANDROID_HOME/licenses"
-          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$ANDROID_HOME/licenses/android-sdk-license"
-          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$ANDROID_HOME/licenses/intel-android-extra-license"
-          ls -la "$ANDROID_HOME/licenses"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          mkdir -p "$SDK/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$SDK/licenses/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$SDK/licenses/android-sdk-preview-license"
+          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$SDK/licenses/intel-android-extra-license"
+          ls -la "$SDK"
 
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
