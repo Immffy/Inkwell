@@ -19,7 +19,7 @@
             android:background="#EDE9E0"
             android:fitsSystemWindows="true"
             app:navigationIcon="?attr/homeAsUpIndicator"
-            app:title="预设与微调"
+            app:title="显示模式"
             app:titleTextColor="#222222" />
 
         <LinearLayout
@@ -30,33 +30,32 @@
             android:paddingEnd="16dp"
             android:paddingTop="14dp">
 
+            <!-- ── 一屏三模 ── -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="预设"
+                android:text="一屏三模"
                 android:textColor="#111111"
-                android:textSize="16sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:text="选一个预设即可立即生效（约 2 秒内）。"
+                android:text="按内容选就行，不用记电子纸面板型号。点一下立即生效。"
                 android:textColor="#888888"
                 android:textSize="11.5sp" />
 
-            <RadioGroup
-                android:id="@+id/rgPreset"
+            <LinearLayout
+                android:id="@+id/boxModes"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="#FFFFFF"
-                android:padding="10dp" />
+                android:layout_marginTop="10dp"
+                android:orientation="vertical" />
 
-            <!-- 预设说明 -->
             <TextView
-                android:id="@+id/tvPresetTip"
+                android:id="@+id/tvModeTip"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
@@ -67,11 +66,42 @@
                 android:textSize="11.5sp"
                 android:lineSpacingExtra="2dp" />
 
+            <!-- ── 进阶档位（折叠）── -->
+            <Button
+                android:id="@+id/btnAdvanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="进阶档位（按面板型号细分）"
+                android:textSize="13sp" />
+
+            <RadioGroup
+                android:id="@+id/rgAdvanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvPresetTip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#FFF4E5"
+                android:padding="10dp"
+                android:text=""
+                android:textColor="#7A5B1E"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+            <!-- ── 微调 ── -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="微调（会覆盖预设）"
+                android:text="微调（会覆盖当前模式）"
                 android:textColor="#111111"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -102,7 +132,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Kaleido 3 约为 sRGB 的四到六成，落在 0.40–0.50"
+                    android:text="彩纸档落在 0.40–0.50；墨纸档为 0（纯灰阶）"
                     android:textColor="#999999"
                     android:textSize="10.5sp" />
 
@@ -121,13 +151,6 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:max="60" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="纸感的主要来源。漫画的黑色轮廓线对它最敏感"
-                    android:textColor="#999999"
-                    android:textSize="10.5sp" />
 
                 <TextView
                     android:id="@+id/lbWhite"
@@ -152,6 +175,29 @@
                     android:textColor="#999999"
                     android:textSize="10.5sp" />
 
+                <TextView
+                    android:id="@+id/lbWarm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="纸色暖度"
+                    android:textColor="#333333"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/sbWarm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="给 RGB 三通道不同的偏移，让白底变成米白而不是灰白。墨纸档最明显。"
+                    android:textColor="#999999"
+                    android:textSize="10.5sp" />
+
                 <Button
                     android:id="@+id/btnApply"
                     android:layout_width="match_parent"
@@ -168,6 +214,17 @@
                 android:backgroundTint="#C0392B"
                 android:text="关闭效果（恢复原色）"
                 android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="#FFF4E5"
+                android:padding="10dp"
+                android:text="这三档都是软件调色，不是电子墨水屏。\n\n做不到的：AG 防眩光（硬件蚀刻，消掉屏幕映出的窗户和人影）、纸纹颗粒感、压低局部高光 —— 后两者是非线性操作，色彩矩阵做不了。\n\n能做到的：饱和度、对比、白黑位、米白纸色，全部线性变换，零延迟零耗电。"
+                android:textColor="#7A5B1E"
+                android:textSize="11.5sp"
+                android:lineSpacingExtra="2dp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

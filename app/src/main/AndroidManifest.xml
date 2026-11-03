@@ -36,14 +36,14 @@
         <activity
             android:name=".PresetActivity"
             android:exported="false"
-            android:label="预设与微调"
+            android:label="显示模式"
             android:parentActivityName=".MainActivity"
             android:screenOrientation="portrait" />
 
         <activity
             android:name=".RulesActivity"
             android:exported="false"
-            android:label="按 App 切黑白档"
+            android:label="按 App 指定模式"
             android:parentActivityName=".MainActivity"
             android:screenOrientation="portrait" />
 

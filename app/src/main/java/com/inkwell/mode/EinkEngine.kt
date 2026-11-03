@@ -86,7 +86,9 @@ object EinkEngine {
         EinkPrefs.setEnabled(ctx, enabled)
         val preset = EinkPrefs.getPreset(ctx)
         val bw = EinkPrefs.getAppRulesSet(ctx)
-        val text = ControlContract.serialize(enabled, p, preset, bw)
+        val mode = EinkPrefs.getMode(ctx)
+        val rules = EinkPrefs.getAppRuleModes(ctx)
+        val text = ControlContract.serialize(enabled, p, preset, bw, mode, rules)
         return try {
             val f = java.io.File(ControlContract.CONF_FILE)
             f.parentFile?.mkdirs()

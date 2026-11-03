@@ -7,11 +7,15 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 
 /**
- * 按 App 切黑白档。
+ * 按 App 指定显示模式。
+ *
+ * 0.2.2 起不再只是「名单内切黑白档」，而是可以给每个 App 指定
+ * 原色 / 彩纸 / 墨纸中的任意一档。模块侧轮询前台 App 后自动换档。
  *
  * 需要「使用情况访问」权限才能查前台 App。没授权时给出提示和跳转入口，
  * 而不是静默失效 —— 静默失效最让人困惑。
@@ -21,6 +25,10 @@ class RulesActivity : AppCompatActivity() {
     private lateinit var tvPkgs: TextView
     private lateinit var tvPerm: TextView
     private lateinit var etPkg: EditText
+    private lateinit var btnModePick: Button
+    private lateinit var tvModeHint: TextView
+
+    private var selectedMode: String = DisplayMode.INK_PAPER
 
     private val QUICK = listOf(
         "微信读书" to "com.tencent.weread",
@@ -28,6 +36,7 @@ class RulesActivity : AppCompatActivity() {
         "掌阅" to "com.chaozh.iReader",
         "知乎" to "com.zhihu.android",
         "Chrome" to "com.android.chrome",
+        "系统相机" to "com.android.camera2",
         "系统桌面" to "com.miui.home"
     )
 
@@ -38,24 +47,32 @@ class RulesActivity : AppCompatActivity() {
         tvPkgs = findViewById(R.id.tvPkgs)
         tvPerm = findViewById(R.id.tvPerm)
         etPkg = findViewById(R.id.etPkg)
+        btnModePick = findViewById(R.id.btnModePick)
+        tvModeHint = findViewById(R.id.tvModeHint)
 
         findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
+
+        updateModePicker()
+        btnModePick.setOnClickListener { pickMode { m -> selectedMode = m; updateModePicker() } }
 
         buildQuickAdd()
         refresh()
 
         findViewById<Button>(R.id.btnAdd).setOnClickListener {
             val pkg = etPkg.text.toString().trim()
-            if (pkg.isBlank()) return@setOnClickListener
-            val set = ConfigStore.loadBwAppsLocal(this).toMutableSet()
-            set.add(pkg)
-            save(set)
+            if (pkg.isBlank()) {
+                toast("先填包名")
+                return@setOnClickListener
+            }
+            val map = EinkPrefs.getAppRuleModes(this).toMutableMap()
+            map[pkg] = selectedMode
+            save(map)
             etPkg.setText("")
-            toast("已加入：$pkg")
+            toast("已设置：$pkg → $selectedMode")
         }
 
         findViewById<Button>(R.id.btnClear).setOnClickListener {
-            save(emptySet())
+            save(emptyMap())
             toast("已清空")
         }
 
@@ -65,21 +82,54 @@ class RulesActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkPerm()
+        refresh()
+    }
+
+    /** 三模选择对话框 */
+    private fun pickMode(onPick: (String) -> Unit) {
+        val labels = DisplayMode.ALL.map { mode ->
+            "$mode\n   ${DisplayMode.usage(mode).lines().firstOrNull() ?: ""}"
+        }
+        val items = Array<CharSequence>(labels.size) { labels[it] }
+        AlertDialog.Builder(this)
+            .setTitle("选择显示模式")
+            .setItems(items) { _, which -> onPick(DisplayMode.ALL[which]) }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun updateModePicker() {
+        btnModePick.text = "$selectedMode  ▼"
+        tvModeHint.text = DisplayMode.usage(selectedMode).replace("\n", " ")
     }
 
     private fun buildQuickAdd() {
         val box = findViewById<LinearLayout>(R.id.boxQuick)
-        val current = ConfigStore.loadBwAppsLocal(this)
         for ((label, pkg) in QUICK) {
             val b = Button(this).apply {
-                text = if (current.contains(pkg)) "$label ✓" else label
                 isAllCaps = false
                 textSize = 12f
             }
             b.setOnClickListener {
-                val set = ConfigStore.loadBwAppsLocal(this).toMutableSet()
-                if (set.contains(pkg)) set.remove(pkg) else set.add(pkg)
-                save(set)
+                val current = EinkPrefs.getAppRuleModes(this)
+                val options = DisplayMode.ALL.toMutableList()
+                val labels = options.map { m ->
+                    if (current[pkg] == m) "$m  ✓ 当前" else m
+                }.plus("移除规则")
+                val items = Array<CharSequence>(labels.size) { labels[it] }
+                AlertDialog.Builder(this)
+                    .setTitle("$label  →  用哪个模式？")
+                    .setItems(items) { _, which ->
+                        val map = current.toMutableMap()
+                        if (which == options.size) {
+                            map.remove(pkg)
+                        } else {
+                            map[pkg] = options[which]
+                        }
+                        save(map)
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
             }
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -89,25 +139,25 @@ class RulesActivity : AppCompatActivity() {
         }
     }
 
-    private fun save(set: Set<String>) {
-        val ok = ConfigStore.saveBwApps(this, set)
+    private fun save(map: Map<String, String>) {
+        ConfigStore.saveAppRuleModes(this, map)
         refresh()
-        // 名单变了要重新下发一次，让模块读到新的 bw= 行
-        ConfigStore.saveAndApply(
-            this, EinkPrefs.load(this), EinkPrefs.getPreset(this), EinkPrefs.isEnabled(this)
-        )
-        if (!ok) toast("写入失败，请查看诊断页")
     }
 
     private fun refresh() {
-        val s = ConfigStore.loadBwAppsLocal(this)
-        tvPkgs.text = if (s.isEmpty()) "（空）" else s.joinToString("\n")
+        val rules = EinkPrefs.getAppRuleModes(this)
+        tvPkgs.text = if (rules.isEmpty()) {
+            "（空）"
+        } else {
+            rules.entries.joinToString("\n") { "${it.key}\n   → ${it.value}" }
+        }
         val box = findViewById<LinearLayout>(R.id.boxQuick)
         for (i in 0 until box.childCount) {
             val b = box.getChildAt(i) as? Button ?: continue
-            val pkg = QUICK.getOrNull(i)?.second ?: continue
-            val label = QUICK[i].first
-            b.text = if (s.contains(pkg)) "$label ✓" else label
+            val pair = QUICK.getOrNull(i) ?: continue
+            val label = pair.first
+            val mode = rules[pair.second]
+            b.text = if (mode == null) label else "$label  →  $mode ✓"
         }
     }
 
@@ -118,7 +168,7 @@ class RulesActivity : AppCompatActivity() {
             tvPerm.visibility = android.view.View.GONE
         } else {
             tvPerm.visibility = android.view.View.VISIBLE
-            tvPerm.text = "⚠️ 未授予「使用情况访问」权限，按 App 切档不会生效。\n点击这里去设置开启。"
+            tvPerm.text = "⚠️ 未授予「使用情况访问」权限，按 App 自动换档不会生效。\n点击这里去设置开启。"
             tvPerm.setOnClickListener {
                 try {
                     startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))

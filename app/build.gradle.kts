@@ -26,7 +26,7 @@ plugins {
 // ════════════════════════════════════════════════════════════════
 val versionMajor = 0
 val versionMinor = 2
-val versionPatch = 1
+val versionPatch = 2
 val versionSuffix = "" // 预发布用 "-alpha.1" / "-beta.1"，正式版留空
 
 val computedVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch

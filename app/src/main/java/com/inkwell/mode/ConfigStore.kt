@@ -25,7 +25,9 @@ object ConfigStore {
         EinkPrefs.setEnabled(ctx, enabled)
 
         val bw = loadBwAppsLocal(ctx)
-        val text = ControlContract.serialize(enabled, p, preset, bw)
+        val mode = EinkPrefs.getMode(ctx)
+        val rules = EinkPrefs.getAppRuleModes(ctx)
+        val text = ControlContract.serialize(enabled, p, preset, bw, mode, rules)
 
         val fileOk = writeConfFile(text)
         sendBroadcast(ctx, p, preset, enabled)
@@ -46,6 +48,13 @@ object ConfigStore {
 
     /** 仅切换开关，参数保持上次的值 */
     fun setEnabled(ctx: Context, enabled: Boolean): Result {
+        // 从「原色模式」重新开启时，不能沿用 OFF 参数 —— 否则用户会看到
+        // "开关显示已开启，屏幕却没变化"。自动回到彩纸档，符合直觉。
+        if (enabled && EinkPrefs.getMode(ctx) == DisplayMode.ORIGINAL) {
+            EinkPrefs.setMode(ctx, DisplayMode.COLOR_PAPER)
+            EinkPrefs.save(ctx, DisplayMode.params(DisplayMode.COLOR_PAPER))
+            EinkPrefs.setPreset(ctx, DisplayMode.COLOR_PAPER)
+        }
         val p = EinkPrefs.load(ctx)
         val preset = EinkPrefs.getPreset(ctx)
         return saveAndApply(ctx, p, preset, enabled)
@@ -78,6 +87,7 @@ object ConfigStore {
                 putExtra(ControlContract.EXTRA_SAT, p.saturation)
                 putExtra(ControlContract.EXTRA_BLACK, p.black)
                 putExtra(ControlContract.EXTRA_WHITE, p.white)
+                putExtra(ControlContract.EXTRA_WARMTH, p.warmth)
                 putExtra(ControlContract.EXTRA_PRESET, preset)
                 setPackage(ctx.packageName)
                 addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
@@ -94,6 +104,7 @@ object ConfigStore {
             cmds += "setprop persist.inkwell.sat %.4f".format(p.saturation)
             cmds += "setprop persist.inkwell.black %.4f".format(p.black)
             cmds += "setprop persist.inkwell.white %.4f".format(p.white)
+            cmds += "setprop persist.inkwell.warmth %.4f".format(p.warmth)
         }
         return try {
             val proc = Runtime.getRuntime().exec("su")
@@ -130,6 +141,15 @@ object ConfigStore {
     }
 
     fun loadBwAppsLocal(ctx: Context): Set<String> = EinkPrefs.getAppRulesSet(ctx)
+
+    /** 按 App 指定三模之一；保存后立刻重新下发，让模块读到新的 rules= 行 */
+    fun saveAppRuleModes(ctx: Context, map: Map<String, String>): Boolean {
+        EinkPrefs.putAppRuleModes(ctx, map)
+        saveAndApply(
+            ctx, EinkPrefs.load(ctx), EinkPrefs.getPreset(ctx), EinkPrefs.isEnabled(ctx)
+        )
+        return true
+    }
 
     /** 诊断用：直接下发矩阵，验证 SurfaceFlinger 侧可用性 */
     fun testRawMatrix(): Boolean {

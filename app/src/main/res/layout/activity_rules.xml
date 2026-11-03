@@ -13,7 +13,7 @@
         android:background="#EDE9E0"
         android:fitsSystemWindows="true"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="按 App 切黑白档"
+        app:title="按 App 指定模式"
         app:titleTextColor="#222222" />
 
     <ScrollView
@@ -36,7 +36,7 @@
                 android:layout_height="wrap_content"
                 android:background="#EAF3EC"
                 android:padding="10dp"
-                android:text="名单里的 App 在前台时，自动切到「黑白纸质」档（更亮更锐利，适合阅读）。\n\n比按画面彩度判断更准也更省，推荐给阅读类 App 用。"
+                android:text="给 App 单独指定显示模式，切到前台时自动换档。\n\n例：相机设「原色」保证取色准确；微信读书设「墨纸」长时间阅读；绘本 App 设「彩纸」。\n\n这比手动切方便 —— 联想那台三模还得自己点。"
                 android:textColor="#2C5F3D"
                 android:textSize="11.5sp"
                 android:lineSpacingExtra="2dp" />
@@ -53,10 +53,46 @@
                 android:textSize="11.5sp"
                 android:visibility="gone" />
 
+            <!-- 选模式 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="① 选这个 App 用哪个模式"
+                android:textColor="#111111"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnModePick"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="墨纸模式  ▼" />
+
+            <TextView
+                android:id="@+id/tvModeHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text=""
+                android:textColor="#888888"
+                android:textSize="11sp" />
+
+            <!-- 输入包名 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="② 填包名"
+                android:textColor="#111111"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="6dp"
                 android:orientation="horizontal">
 
                 <EditText
@@ -64,7 +100,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:hint="包名，如 com.tencent.weread"
+                    android:hint="如 com.tencent.weread"
                     android:inputType="text"
                     android:singleLine="true"
                     android:textSize="13sp" />
@@ -76,15 +112,23 @@
                     android:text="加入" />
             </LinearLayout>
 
-            <!-- 常用阅读 App 快捷添加 -->
+            <!-- 快捷添加 -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="快捷添加（常见阅读 App）"
+                android:layout_marginTop="18dp"
+                android:text="常见 App 快捷设置"
                 android:textColor="#111111"
                 android:textSize="14sp"
                 android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="点一下弹窗选模式；已设置的会显示当前档位"
+                android:textColor="#888888"
+                android:textSize="11sp" />
 
             <LinearLayout
                 android:id="@+id/boxQuick"
@@ -93,11 +137,12 @@
                 android:layout_marginTop="8dp"
                 android:orientation="vertical" />
 
+            <!-- 已生效名单 -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:text="已生效名单"
+                android:text="已生效规则"
                 android:textColor="#111111"
                 android:textSize="14sp"
                 android:textStyle="bold" />
@@ -112,7 +157,8 @@
                 android:padding="10dp"
                 android:text="（空）"
                 android:textColor="#555555"
-                android:textSize="11.5sp" />
+                android:textSize="11.5sp"
+                android:lineSpacingExtra="3dp" />
 
             <Button
                 android:id="@+id/btnClear"
@@ -120,7 +166,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:backgroundTint="#C0392B"
-                android:text="清空名单"
+                android:text="清空全部规则"
                 android:textColor="#FFFFFF" />
         </LinearLayout>
     </ScrollView>

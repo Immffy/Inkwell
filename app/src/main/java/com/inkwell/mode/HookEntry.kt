@@ -50,7 +50,8 @@ class HookEntry : IXposedHookLoadPackage {
 
     private var mainHandler: Handler? = null
     private var systemContext: Context? = null
-    private var bwApps: Set<String> = emptySet()
+    /** 包名 → 三模之一（0.2.2：不再只是「切黑白档」） */
+    private var appRules: Map<String, String> = emptyMap()
     private var lastFingerprint = ""
     private var lastApp = ""
 
@@ -187,6 +188,7 @@ class HookEntry : IXposedHookLoadPackage {
                             PropConfig.pushedSat = intent.getFloatExtra(ControlContract.EXTRA_SAT, 0.45f)
                             PropConfig.pushedBlack = intent.getFloatExtra(ControlContract.EXTRA_BLACK, 0.16f)
                             PropConfig.pushedWhite = intent.getFloatExtra(ControlContract.EXTRA_WHITE, 0.92f)
+                            PropConfig.pushedWarmth = intent.getFloatExtra(ControlContract.EXTRA_WARMTH, 0f)
                         }
                         if (intent.hasExtra(ControlContract.EXTRA_PRESET)) {
                             PropConfig.pushedPreset = intent.getStringExtra(ControlContract.EXTRA_PRESET)
@@ -260,30 +262,26 @@ class HookEntry : IXposedHookLoadPackage {
             val p = currentParams()
             val m = ColorMatrixBuilder.build(p)
             setMatrixMethod?.invoke(dtm, OUR_LEVEL, m)
-            XLog.i("applied: sat=%.2f black=%.2f white=%.2f (bw=%s, app=%s)".format(
-                p.saturation, p.black, p.white, isBwMode(), lastApp
+            XLog.i("applied: sat=%.2f black=%.2f white=%.2f warm=%.2f (rule=%s, app=%s)".format(
+                p.saturation, p.black, p.white, p.warmth,
+                appRules[lastApp] ?: "-", lastApp
             ))
         } catch (t: Throwable) {
             XLog.e("apply failed", t)
         }
     }
 
-    /** 综合预设 + 按 App 规则决定最终参数 */
+    /**
+     * 综合全局参数 + 按 App 规则决定最终参数。
+     *
+     * 优先级：前台 App 的专属规则 > 全局三模。
+     * 这样给「相机」设原色、「微信读书」设墨纸后，切换 App 会自动换档，
+     * 比联想那台需要手动切更省事。
+     */
     private fun currentParams(): EinkParams {
         val base = PropConfig.loadParams()
-        return if (isBwMode()) {
-            // 黑白档：保留用户的黑位/白位偏好，只把饱和度归零
-            EinkParams.PAPER_BW.copy(
-                black = base.black.coerceAtMost(0.15f),
-                white = base.white.coerceAtLeast(0.92f)
-            )
-        } else base
-    }
-
-    private fun isBwMode(): Boolean {
-        val app = lastApp
-        if (app.isBlank()) return false
-        return bwApps.any { app == it || app.startsWith("$it:") }
+        val mode = appRules[lastApp] ?: return base
+        return DisplayMode.params(mode)
     }
 
     private fun scheduleApply(delayMs: Long) {
@@ -303,14 +301,14 @@ class HookEntry : IXposedHookLoadPackage {
                     val fp = PropConfig.fingerprint()
                     if (fp != lastFingerprint) {
                         lastFingerprint = fp
-                        bwApps = PropConfig.loadBwApps()
-                        XLog.i("config changed -> $fp")
+                        appRules = PropConfig.loadAppRules()
+                        XLog.i("config changed, ${appRules.size} app rule(s)")
                         applyNow()
                     }
                     val app = currentForegroundApp()
                     if (app != lastApp) {
                         lastApp = app
-                        if (bwApps.isNotEmpty()) applyNow()
+                        if (appRules.isNotEmpty()) applyNow()
                     }
                 } catch (t: Throwable) {
                     XLog.e("poll error", t)

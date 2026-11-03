@@ -57,6 +57,7 @@ class OverlayService : Service() {
                 putExtra("sat", p.saturation)
                 putExtra("black", p.black)
                 putExtra("white", p.white)
+                putExtra("warmth", p.warmth)
                 putExtra("enabled", enabled)
             }
             try {
@@ -89,7 +90,9 @@ class OverlayService : Service() {
             black = intent?.getFloatExtra("black", EinkParams.KALEIDO3.black)
                 ?: EinkParams.KALEIDO3.black,
             white = intent?.getFloatExtra("white", EinkParams.KALEIDO3.white)
-                ?: EinkParams.KALEIDO3.white
+                ?: EinkParams.KALEIDO3.white,
+            warmth = intent?.getFloatExtra("warmth", EinkParams.KALEIDO3.warmth)
+                ?: EinkParams.KALEIDO3.warmth
         )
 
         startForeground(NOTI_ID, buildNotification(enabled))
@@ -112,8 +115,9 @@ class OverlayService : Service() {
         removeView()
 
         val v = View(this).apply {
-            // 纸色：略偏暖的白，接近未漂白纸
-            setBackgroundColor(Color.rgb(250, 246, 236))
+            // 纸色随 warmth 从「中性灰白」渐变到「米黄纸」。
+            // 三模里原色 warmth=0、彩纸 0.55、墨纸 1.0，遮罩层至少能体现这个差别。
+            setBackgroundColor(paperColor(p.warmth))
         }
 
         val lp = WindowManager.LayoutParams(
@@ -149,10 +153,23 @@ class OverlayService : Service() {
      * 饱和度越高（越接近原色）→ 需要压得越重。
      * 这是经验映射，不是精确还原 —— 遮罩本质做不到精确。
      */
+    private fun paperColor(warmth: Float): Int {
+        val w = warmth.coerceIn(0.0f, 1.0f)
+        return Color.rgb(
+            (245 + 5 * w).toInt(),
+            (245 - 5 * w).toInt(),
+            (245 - 25 * w).toInt()
+        )
+    }
+
     private fun overlayAlpha(p: EinkParams): Float {
         val paperAge = (1.0f - p.white).coerceIn(0.0f, 0.4f)     // 白位 1.0→0.6
         val vivid = p.saturation.coerceIn(0.0f, 1.0f)             // 越鲜艳越要压
-        val a = 0.10f + paperAge * 0.55f + vivid * 0.18f
+        val warmth = p.warmth.coerceIn(0.0f, 1.0f)
+        // 墨纸档（饱和≈0）额外加浓，让它至少比彩纸更"旧"一些。
+        // 注意：遮罩永远做不到灰度化，这里只是让三档在观感上拉开距离。
+        val mono = if (p.saturation < 0.1f) 0.12f else 0f
+        val a = 0.10f + paperAge * 0.55f + vivid * 0.18f + warmth * 0.06f + mono
         return a.coerceIn(0.0f, 0.45f)
     }
 

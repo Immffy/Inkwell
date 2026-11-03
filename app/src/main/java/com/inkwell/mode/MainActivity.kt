@@ -19,6 +19,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvModule: TextView
     private lateinit var tvRoot: TextView
     private lateinit var tvState: TextView
+    private lateinit var tvMode: TextView
     private lateinit var tvVersion: TextView
     private lateinit var tvEngine: TextView
     private lateinit var tvEngineDesc: TextView
@@ -33,6 +34,7 @@ class MainActivity : AppCompatActivity() {
         tvModule = findViewById(R.id.tvModule)
         tvRoot = findViewById(R.id.tvRoot)
         tvState = findViewById(R.id.tvState)
+        tvMode = findViewById(R.id.tvMode)
         tvVersion = findViewById(R.id.tvVersion)
         tvEngine = findViewById(R.id.tvEngine)
         tvEngineDesc = findViewById(R.id.tvEngineDesc)
@@ -60,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         btnRestore.setOnClickListener {
             EinkPrefs.save(this, EinkParams.OFF)
             EinkPrefs.setPreset(this, "关闭效果（原色）")
+            EinkPrefs.setMode(this, DisplayMode.ORIGINAL)
             val r = ConfigStore.setEnabled(this, false)
             syncState()
             toast(if (r.fileOk) "已恢复默认显示" else "配置文件写入失败，请查看诊断页")
@@ -73,6 +76,19 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnDiag).setOnClickListener {
             startActivity(android.content.Intent(this, DiagActivity::class.java))
+        }
+
+        // 首次运行（或配置文件被清掉）时写一份默认配置。
+        // 否则模块侧在没文件时回落到 Kaleido 3 原始参数，暖度 0，
+        // 和界面上显示的「彩纸模式」对不上。
+        if (!java.io.File(ControlContract.CONF_FILE).exists()) {
+            EinkPrefs.setMode(this, DisplayMode.COLOR_PAPER)
+            ConfigStore.saveAndApply(
+                this,
+                DisplayMode.params(DisplayMode.COLOR_PAPER),
+                DisplayMode.COLOR_PAPER,
+                true
+            )
         }
 
         syncState()
@@ -96,6 +112,17 @@ class MainActivity : AppCompatActivity() {
         tvState.text = if (on) "效果：开启中" else "效果：已关闭（原色）"
         tvState.setTextColor(if (on) 0xFF1E8449.toInt() else 0xFF888888.toInt())
         btnRestore.visibility = if (on) View.VISIBLE else View.GONE
+
+        val mode = EinkPrefs.getMode(this)
+        tvMode.text = when {
+            !on -> "模式：原色模式（效果已关闭）"
+            mode.isBlank() -> "模式：${DisplayMode.fromLegacyPreset(EinkPrefs.getPreset(this))}"
+            else -> "模式：$mode"
+        }
+        // 点这一行直接跳到模式页，省得再找入口
+        tvMode.setOnClickListener {
+            startActivity(android.content.Intent(this, PresetActivity::class.java))
+        }
     }
 
     private fun checkStatus() {

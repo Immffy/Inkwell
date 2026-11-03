@@ -21,6 +21,7 @@ object PropConfig {
     private const val P_SAT = "persist.inkwell.sat"
     private const val P_BLACK = "persist.inkwell.black"
     private const val P_WHITE = "persist.inkwell.white"
+    private const val P_WARMTH = "persist.inkwell.warmth"
     private const val P_ENABLED = "persist.inkwell.enabled"
     private const val P_PRESET = "persist.inkwell.preset"
 
@@ -28,16 +29,12 @@ object PropConfig {
     const val POLL_MS = 2000L
 
     /** 广播即时值（未收到则为 null，回落到文件/属性） */
-    @Volatile
-    var pushedEnabled: Boolean? = null
-    @Volatile
-    var pushedSat: Float? = null
-    @Volatile
-    var pushedBlack: Float? = null
-    @Volatile
-    var pushedWhite: Float? = null
-    @Volatile
-    var pushedPreset: String? = null
+    @Volatile var pushedEnabled: Boolean? = null
+    @Volatile var pushedSat: Float? = null
+    @Volatile var pushedBlack: Float? = null
+    @Volatile var pushedWhite: Float? = null
+    @Volatile var pushedWarmth: Float? = null
+    @Volatile var pushedPreset: String? = null
 
     private var sysPropsGet: java.lang.reflect.Method? = null
     private var sysPropsGetFloat: java.lang.reflect.Method? = null
@@ -74,56 +71,63 @@ object PropConfig {
     fun isEnabled(): Boolean {
         pushedEnabled?.let { return it }
         val conf = ControlContract.read()
-        if (conf.sat != null || conf.black != null || conf.white != null || conf.preset.isNotBlank()) {
-            return conf.enabled == 1
-        }
+        if (conf.hasParams()) return conf.enabled == 1
         return get(P_ENABLED, "1") == "1"
     }
 
-    /** 读取当前生效参数 */
+    /** 读取当前生效参数（含纸色暖度） */
     fun loadParams(): EinkParams {
         pushedSat?.let { s ->
             return EinkParams(
                 saturation = s,
                 black = pushedBlack ?: EinkParams.KALEIDO3.black,
-                white = pushedWhite ?: EinkParams.KALEIDO3.white
+                white = pushedWhite ?: EinkParams.KALEIDO3.white,
+                warmth = pushedWarmth ?: 0f
             )
         }
 
         val conf = ControlContract.read()
-        if (conf.sat != null || conf.black != null || conf.white != null || conf.preset.isNotBlank()) {
+        if (conf.hasParams()) {
             val base = if (conf.preset.isNotBlank()) EinkParams.byName(conf.preset) else EinkParams.KALEIDO3
             return EinkParams(
                 saturation = conf.sat ?: base.saturation,
                 black = conf.black ?: base.black,
-                white = conf.white ?: base.white
+                white = conf.white ?: base.white,
+                warmth = conf.warmth ?: base.warmth
             )
         }
 
         // 回落到 SystemProperties
         val preset = get(P_PRESET, "")
         val base = if (preset.isNotBlank()) EinkParams.byName(preset) else EinkParams.KALEIDO3
-        val sat = get(P_SAT, "")
-        val blk = get(P_BLACK, "")
-        val wht = get(P_WHITE, "")
         return EinkParams(
-            saturation = sat.toFloatOrNull() ?: base.saturation,
-            black = blk.toFloatOrNull() ?: base.black,
-            white = wht.toFloatOrNull() ?: base.white
+            saturation = get(P_SAT, "").toFloatOrNull() ?: base.saturation,
+            black = get(P_BLACK, "").toFloatOrNull() ?: base.black,
+            white = get(P_WHITE, "").toFloatOrNull() ?: base.white,
+            warmth = get(P_WARMTH, "").toFloatOrNull() ?: base.warmth
         )
     }
 
-    fun loadBwApps(): Set<String> {
-        val fromConf = ControlContract.read().bwApps
+    /**
+     * 按 App 指定显示模式（0.2.2）。
+     * 旧版只写 bw= 名单，ControlContract.parse 会自动映射成「墨纸模式」。
+     */
+    fun loadAppRules(): Map<String, String> {
+        val fromConf = ControlContract.read().rules
         if (fromConf.isNotEmpty()) return fromConf
         return try {
             val f = File(ControlContract.BW_APPS_FILE)
-            if (!f.exists()) return emptySet()
-            f.readLines().map { it.trim() }.filter { it.isNotBlank() }.toSet()
+            if (!f.exists()) return emptyMap()
+            f.readLines().map { it.trim() }
+                .filter { it.isNotBlank() }
+                .associateWith { DisplayMode.INK_PAPER }
         } catch (_: Throwable) {
-            emptySet()
+            emptyMap()
         }
     }
+
+    /** 兼容旧调用：返回配置了规则的包名集合 */
+    fun loadBwApps(): Set<String> = loadAppRules().keys
 
     /** 配置指纹：内容变化才重新应用 */
     fun fingerprint(): String {
@@ -133,7 +137,7 @@ object PropConfig {
         return listOf(
             conf,
             get(P_ENABLED, "1"), get(P_PRESET, ""),
-            get(P_SAT, ""), get(P_BLACK, ""), get(P_WHITE, ""),
+            get(P_SAT, ""), get(P_BLACK, ""), get(P_WHITE, ""), get(P_WARMTH, ""),
             pushedEnabled?.toString() ?: "", pushedSat?.toString() ?: ""
         ).joinToString("|")
     }
@@ -144,6 +148,7 @@ object PropConfig {
         pushedSat = null
         pushedBlack = null
         pushedWhite = null
+        pushedWarmth = null
         pushedPreset = null
     }
 }

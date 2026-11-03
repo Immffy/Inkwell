@@ -67,6 +67,16 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tvMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="模式：彩纸模式"
+                    android:textColor="#2C5F3D"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
                     android:id="@+id/tvEngine"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -157,14 +167,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="预设与微调" />
+                android:text="显示模式（原色 / 彩纸 / 墨纸）" />
 
             <Button
                 android:id="@+id/btnRules"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="按 App 切黑白档" />
+                android:text="按 App 指定模式" />
 
             <Button
                 android:id="@+id/btnDiag"
@@ -179,7 +189,7 @@
                 android:layout_marginTop="18dp"
                 android:background="#FFF4E5"
                 android:padding="10dp"
-                android:text="原理：在系统进程注入全局色彩矩阵。零延迟、零耗电、开机自动生效。\n\n局限：矩阵只能做线性变换（饱和度/对比/白黑位）。色阶量化、抖动、滤光网格是非线性的，需另走 GPU shader 方案。"
+                android:text="原理：在系统进程注入全局色彩矩阵，一屏三模（原色 / 彩纸 / 墨纸）。零延迟、零耗电、开机自动生效。\n\n局限：这是软件调色，不是电子墨水屏。AG 防眩光是硬件蚀刻，纸纹颗粒和局部压高光是非线性变换，色彩矩阵都做不到。"
                 android:textColor="#7A5B1E"
                 android:textSize="11.5sp"
                 android:lineSpacingExtra="2dp" />
