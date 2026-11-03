@@ -20,6 +20,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvRoot: TextView
     private lateinit var tvState: TextView
     private lateinit var tvVersion: TextView
+    private lateinit var tvEngine: TextView
+    private lateinit var tvEngineDesc: TextView
+    private lateinit var btnEngine: Button
     private lateinit var btnToggle: Button
     private lateinit var btnRestore: Button
 
@@ -31,6 +34,9 @@ class MainActivity : AppCompatActivity() {
         tvRoot = findViewById(R.id.tvRoot)
         tvState = findViewById(R.id.tvState)
         tvVersion = findViewById(R.id.tvVersion)
+        tvEngine = findViewById(R.id.tvEngine)
+        tvEngineDesc = findViewById(R.id.tvEngineDesc)
+        btnEngine = findViewById(R.id.btnEngine)
         btnToggle = findViewById(R.id.btnToggle)
         btnRestore = findViewById(R.id.btnRestore)
 
@@ -107,14 +113,55 @@ class MainActivity : AppCompatActivity() {
 
         Thread {
             val root = ConfigStore.hasRoot()
+            val kind = EinkEngine.detect(this)
             runOnUiThread {
                 tvRoot.text = if (root) {
                     "root：已获取 ✓（可选增强，开机更早生效）"
                 } else {
                     "root：未获取（不影响使用，开关走文件通道）"
                 }
+                refreshEngine(kind)
             }
         }.start()
+    }
+
+    /**
+     * 显示当前通道，并在能力不足时给出升级入口。
+     *
+     * 遮罩模式必须把局限写在脸上 —— 否则用户会以为是 App 坏了，
+     * 而不是"这台机器给不了那么高的权限"。
+     */
+    private fun refreshEngine(kind: EngineKind) {
+        tvEngine.text = "通道：${EngineInfo.label(kind)}"
+        tvEngineDesc.text = EngineInfo.description(kind)
+
+        tvEngine.setTextColor(
+            if (EngineInfo.isFull(kind)) 0xFF1E8449.toInt() else 0xFFB7791F.toInt()
+        )
+
+        when {
+            kind == EngineKind.SHIZUKU && !ShizukuEngine.granted -> {
+                btnEngine.visibility = android.view.View.VISIBLE
+                btnEngine.text = "授予 Shizuku 权限"
+                btnEngine.setOnClickListener {
+                    ShizukuEngine.requestPermission()
+                    toast("请在弹出框中允许，然后返回本页")
+                }
+            }
+            kind == EngineKind.NONE -> {
+                btnEngine.visibility = android.view.View.VISIBLE
+                btnEngine.text = "开启悬浮窗权限（启用遮罩模式）"
+                btnEngine.setOnClickListener { EinkEngine.openOverlaySettings(this) }
+            }
+            EngineInfo.canUpgrade(kind) && kind == EngineKind.OVERLAY -> {
+                btnEngine.visibility = android.view.View.VISIBLE
+                btnEngine.text = "了解如何升级到完整效果"
+                btnEngine.setOnClickListener {
+                    toast("装 Shizuku 并启用后，本 App 会自动切换，无需换版本")
+                }
+            }
+            else -> btnEngine.visibility = android.view.View.GONE
+        }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()

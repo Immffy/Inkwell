@@ -208,6 +208,23 @@ class HookEntry : IXposedHookLoadPackage {
         }
     }
 
+    /** 写激活标记（best-effort，失败不影响主流程） */
+    private fun markActive() {
+        try {
+            val f = java.io.File("/data/local/tmp/inkwell.module.active")
+            if (!f.exists()) {
+                f.parentFile?.mkdirs()
+                f.writeText("pid=${android.os.Process.myPid()}\n")
+                try {
+                    Runtime.getRuntime().exec(arrayOf("chmod", "644", f.absolutePath))
+                } catch (_: Throwable) { }
+                XLog.i("module active mark written")
+            }
+        } catch (t: Throwable) {
+            XLog.w("markActive failed: ${t.message}")
+        }
+    }
+
     private fun hasOurMatrix(): Boolean {
         return try {
             val m = XposedHelpers.callMethod(dtmInstance, "getColorMatrix", OUR_LEVEL)
@@ -228,6 +245,9 @@ class HookEntry : IXposedHookLoadPackage {
     private fun applyNow() {
         val dtm = dtmInstance ?: return
         try {
+            // 写激活标记，告诉 App「模块活着」。
+            // App 检测到它就不会再叠遮罩层，避免两套通道同时作用导致颜色错乱。
+            markActive()
             ensureMethod()
             if (!PropConfig.isEnabled()) {
                 // 关闭效果：下发单位矩阵而非 null。

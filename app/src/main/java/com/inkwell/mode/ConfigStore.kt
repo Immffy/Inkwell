@@ -31,8 +31,18 @@ object ConfigStore {
         sendBroadcast(ctx, p, preset, enabled)
         val propOk = if (hasRoot()) applyProps(p, enabled) else false
 
-        return Result(fileOk, propOk, text)
+        // 非 root 机器：把配置交给 Shizuku / 遮罩通道
+        // （有 LSPosed 模块接管时 EinkEngine 内部会自动跳过遮罩，避免叠加）
+        val r = EinkEngine.apply(ctx, p, enabled)
+        lastKind = r.kind
+
+        return Result(fileOk || r.fileOk, propOk || r.shizukuOk, text)
     }
+
+    /** 最近一次实际使用的引擎，供 UI 显示 */
+    @Volatile
+    var lastKind: EngineKind = EngineKind.NONE
+        private set
 
     /** 仅切换开关，参数保持上次的值 */
     fun setEnabled(ctx: Context, enabled: Boolean): Result {

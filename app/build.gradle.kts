@@ -18,14 +18,15 @@ plugins {
 //  0.x.x = 原型验证期（随时可能大改）；1.0.0 = 自己日常用稳定
 //
 //  versionCode 由版本号自动推导：MAJOR*10000 + MINOR*100 + PATCH
-//    0.1.0 → 100 / 0.2.0 → 200 / 1.0.0 → 10000 / 1.2.3 → 10203
+//    0.1.0 → 100 / 0.2.0 → 200 / 0.2.1 → 201
+//    1.0.0 → 10000 / 1.2.3 → 10203
 //  好处：天然单调递增，永远不会出现「改了 versionName 忘了 versionCode」
 //
 //  ⚠️ 已发布过的 versionCode 绝不能回退，只能往上走
 // ════════════════════════════════════════════════════════════════
 val versionMajor = 0
 val versionMinor = 2
-val versionPatch = 0
+val versionPatch = 1
 val versionSuffix = "" // 预发布用 "-alpha.1" / "-beta.1"，正式版留空
 
 val computedVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch
@@ -83,6 +84,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+
+    // Shizuku：非 root 机器上获得 adb shell 权限，从而下发同样的色彩矩阵。
+    // 未安装 Shizuku 时相关 API 安全降级，App 自动走遮罩通道。
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Xposed API：仅编译期需要，运行时由 LSPosed 提供
     compileOnly("de.robv.android.xposed:api:82")
