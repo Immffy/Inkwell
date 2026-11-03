@@ -26,7 +26,7 @@ object EinkEngine {
      * 所以 LSPosed 激活与否不影响 Shizuku 的判断 —— 两者可共存。
      */
     fun detect(ctx: Context): EngineKind {
-        ShizukuEngine.refresh(ctx)
+        ShizukuEngine.refresh()
         if (ShizukuEngine.available && ShizukuEngine.granted) return EngineKind.SHIZUKU
         if (ShizukuEngine.available) return EngineKind.SHIZUKU   // 未授权也走它，UI 会提示授权
         if (OverlayService.hasPermission(ctx)) return EngineKind.OVERLAY
@@ -45,7 +45,7 @@ object EinkEngine {
 
         // ② Shizuku：有则立刻下发（不等模块轮询）
         var shizukuOk = false
-        ShizukuEngine.refresh(ctx)
+        ShizukuEngine.refresh()
         if (ShizukuEngine.available && ShizukuEngine.granted) {
             shizukuOk = ShizukuEngine.apply(p, enabled)
         }

@@ -1,8 +1,7 @@
 package com.inkwell.mode
 
-import android.content.Context
-import android.content.pm.PackageManager
 import java.io.DataOutputStream
+import java.lang.reflect.Method
 
 /**
  * Shizuku 通道：不需要 root，效果与 LSPosed 版完全一致。
@@ -13,16 +12,18 @@ import java.io.DataOutputStream
  * （uid 2000）本来就有权限执行。Shizuku 的作用就是把 adb shell 级权限
  * 授予普通 App，于是我们能下发和 LSPosed 模块完全相同的矩阵。
  *
- * 代价：
- *   - 需要 Android 11+（无线调试）
- *   - 手机重启后开发者选项的无线调试开关会关闭，需重新启用一次（约 30 秒）
+ * ── 为什么全部用反射 ──
  *
- * 若用户机器没装 Shizuku，本类所有方法都安全返回 false，不会崩溃
- * —— Shizuku 未运行时 pingBinder() 返回 false，我们据此降级到遮罩模式。
+ * `rikka.shizuku.Shizuku.newProcess(...)` 在 Shizuku 库里被标记为 internal /
+ * hidden，Kotlin 编译期直接报 "cannot access private static fun newProcess"。
+ * 反射能绕过编译期的可见性检查，运行期照样调用得到。
+ * 副作用是失去了编译期类型检查，所以每个调用都必须包在 try 里并安全降级。
+ *
+ * 若用户没装 Shizuku，所有方法安全返回 false —— 这不是错误，是正常的降级路径。
  */
 object ShizukuEngine {
 
-    private const val TAG = "Inkwell/Shizuku"
+    private const val API_CLASS = "rikka.shizuku.Shizuku"
     private const val REQ_CODE = 10086
 
     /** Shizuku 是否可用（已安装且已运行） */
@@ -35,61 +36,71 @@ object ShizukuEngine {
     var granted: Boolean = false
         private set
 
-    private var listenerRegistered = false
+    private var inited = false
+    private var mPing: Method? = null
+    private var mCheckPerm: Method? = null
+    private var mReqPerm: Method? = null
+    private var mNewProc: Method? = null
 
     /**
-     * 刷新状态。必须在每次使用前调用（Shizuku 可能刚被启动或刚停止）。
-     * 任何异常都吞掉并降级 —— 没有 Shizuku 是正常情况，不是错误。
+     * 反射解析 Shizuku 的方法句柄。
+     * 只做一次；失败则整个通道永久降级（没装 Shizuku 时的正常情况）。
      */
-    fun refresh(ctx: Context) {
+    private fun init() {
+        if (inited) return
+        inited = true
         try {
-            val pm = ctx.packageManager
-            val installed = try {
-                pm.getPackageInfo("moe.shizuku.privileged.api", 0)
-                true
-            } catch (_: PackageManager.NameNotFoundException) {
-                false
-            }
-            if (!installed) {
-                available = false; granted = false
-                return
-            }
-
-            available = rikka.shizuku.Shizuku.pingBinder()
-            granted = if (available) {
-                try {
-                    val v = rikka.shizuku.Shizuku.checkSelfPermission()
-                    v == PackageManager.PERMISSION_GRANTED
-                } catch (_: Throwable) { false }
-            } else false
-
-            if (available && !listenerRegistered) {
-                try {
-                    rikka.shizuku.Shizuku.addBinderReceivedListener {
-                        available = true
-                        refresh(ctx)
-                    }
-                    listenerRegistered = true
-                } catch (_: Throwable) { }
-            }
+            val cls = Class.forName(API_CLASS)
+            mPing = cls.getDeclaredMethod("pingBinder").apply { isAccessible = true }
+            mCheckPerm = cls.getDeclaredMethod("checkSelfPermission").apply { isAccessible = true }
+            mReqPerm = cls.getDeclaredMethod(
+                "requestPermission", Int::class.javaPrimitiveType
+            ).apply { isAccessible = true }
+            mNewProc = cls.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            ).apply { isAccessible = true }
+            XLog.i("shizuku api resolved")
         } catch (t: Throwable) {
-            // Shizuku API 不可用（未集成或版本不兼容）
-            available = false; granted = false
-            XLog.w("Shizuku 不可用：${t.message}")
+            XLog.w("Shizuku API 不可用（未安装或版本不兼容）：${t.message}")
         }
     }
 
-    fun requestPermission(code: Int = REQ_CODE) {
+    /** 刷新状态。每次使用前调用（Shizuku 可能刚被启动或刚停止）。 */
+    fun refresh() {
+        init()
+        val ping = mPing
+        if (ping == null) {
+            available = false; granted = false
+            return
+        }
         try {
-            if (available && !granted) rikka.shizuku.Shizuku.requestPermission(code)
-        } catch (_: Throwable) { }
+            available = (ping.invoke(null) as? Boolean) ?: false
+            granted = if (available) {
+                val v = mCheckPerm?.invoke(null) as? Int
+                v == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else false
+        } catch (t: Throwable) {
+            available = false; granted = false
+            XLog.w("shizuku refresh failed: ${t.message}")
+        }
+    }
+
+    fun requestPermission() {
+        try {
+            if (available && !granted) mReqPerm?.invoke(null, REQ_CODE)
+        } catch (t: Throwable) {
+            XLog.w("shizuku requestPermission failed: ${t.message}")
+        }
     }
 
     /**
      * 下发色彩矩阵。
      *
      * 与 LSPosed 版的区别只有调用方式：那边直接调 DisplayTransformManager 的方法，
-     * 这边通过 adb shell 的 service call。矩阵内容完全相同。
+     * 这边通过 Shizuku 拿到 adb shell 权限后执行 service call。矩阵内容完全相同。
      */
     fun apply(p: EinkParams, enabled: Boolean): Boolean {
         if (!available || !granted) return false
@@ -104,10 +115,20 @@ object ShizukuEngine {
         val cmd = sb.toString()
 
         return try {
-            val proc = rikka.shizuku.Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
-            val os = DataOutputStream(proc.outputStream)
-            os.writeBytes("exit\n"); os.flush()
-            val code = proc.waitFor()
+            val proc = mNewProc?.invoke(null, arrayOf("sh", "-c", cmd), null, null)
+            if (proc == null) {
+                XLog.w("shizuku newProcess 不可用")
+                return false
+            }
+            val p2 = proc as? Process ?: run {
+                XLog.w("shizuku newProcess 返回类型异常")
+                return false
+            }
+            try {
+                val os = DataOutputStream(p2.outputStream)
+                os.writeBytes("exit\n"); os.flush()
+            } catch (_: Throwable) { }
+            val code = p2.waitFor()
             XLog.i("shizuku applied (exit=$code)")
             code == 0
         } catch (t: Throwable) {
