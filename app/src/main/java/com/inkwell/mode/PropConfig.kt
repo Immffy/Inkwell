@@ -6,15 +6,18 @@ import java.io.File
  * 模块侧（运行在 system_server）读取配置。
  *
  * 读取优先级：
- *   ① 文件 /data/local/tmp/inkwell.conf
- *      —— root-free 主通道。system_server（uid 1000）可读该目录。
- *         App 写入并 chmod 644，无需任何 root 权限。
- *         persist 到磁盘 → 重启后按上次开关状态恢复（关了就是关了）。
+ *   ① 文件 /data/system/inkwell.conf（App 经 su 写入）
+ *      —— system_server 自己的目录，必可读。旧路径 /data/local/tmp 仍兼容读取。
  *
  *   ② SystemProperties persist.inkwell.*
- *      —— 需 root 才能写。有则用（开机更早生效），没有也不影响。
+ *      —— 需 root 才能写，但 system_server 直接可读，重启后保持。
  *
- * 广播收到的值存在内存中优先使用（即时生效），随后被文件轮询覆盖为一致值。
+ *   ③ 广播瞬时值（最高优先）
+ *      —— App 发全局广播直达 system_server 的动态 receiver，即时生效。
+ *         这是 root-free 的主通道；应用后清空，后续以文件/属性为准。
+ *
+ * ⚠️ 0.2.2 及更早版本把 /data/local/tmp 当"App 可直接写的 root-free 通道"是错的：
+ *    Android 16 的 SELinux 下普通 app 进程写不了那个目录，指令从未送达。
  */
 object PropConfig {
 
@@ -108,11 +111,24 @@ object PropConfig {
         )
     }
 
+    /** 全局三模（持久化在 setprop 或配置文件里） */
+    fun loadMode(): String {
+        val fromFile = ControlContract.read().mode
+        if (fromFile.isNotBlank()) return fromFile
+        return get("persist.inkwell.mode", "")
+    }
+
     /**
      * 按 App 指定显示模式（0.2.2）。
+     * 0.2.2 起优先读 /data/system/inkwell_rules.conf（App 经 su 写）。
      * 旧版只写 bw= 名单，ControlContract.parse 会自动映射成「墨纸模式」。
      */
     fun loadAppRules(): Map<String, String> {
+        try {
+            val f = File(ControlContract.RULES_FILE)
+            if (f.exists()) return ControlContract.parseRules(f.readText())
+        } catch (_: Throwable) { }
+
         val fromConf = ControlContract.read().rules
         if (fromConf.isNotEmpty()) return fromConf
         return try {
@@ -131,12 +147,16 @@ object PropConfig {
 
     /** 配置指纹：内容变化才重新应用 */
     fun fingerprint(): String {
-        val conf = try {
-            File(ControlContract.CONF_FILE).takeIf { it.exists() }?.readText() ?: ""
+        val conf = ControlContract.readRaw()
+        val rules = try {
+            File(ControlContract.RULES_FILE).takeIf { it.exists() }?.readText() ?: ""
+        } catch (_: Throwable) { "" }
+        val legacy = try {
+            File(ControlContract.LEGACY_CONF_FILE).takeIf { it.exists() }?.readText() ?: ""
         } catch (_: Throwable) { "" }
         return listOf(
-            conf,
-            get(P_ENABLED, "1"), get(P_PRESET, ""),
+            conf, rules, legacy,
+            get(P_ENABLED, "1"), get(P_PRESET, ""), get("persist.inkwell.mode", ""),
             get(P_SAT, ""), get(P_BLACK, ""), get(P_WHITE, ""), get(P_WARMTH, ""),
             pushedEnabled?.toString() ?: "", pushedSat?.toString() ?: ""
         ).joinToString("|")

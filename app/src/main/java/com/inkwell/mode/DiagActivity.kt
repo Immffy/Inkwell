@@ -9,14 +9,14 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
-import java.io.File
 
-/** 诊断与关于 */
+/** 诊断与关于（0.2.2：如实反映三条通道，不再把"文件没写"当成功能故障） */
 class DiagActivity : AppCompatActivity() {
 
     private lateinit var tvChannels: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvAbout: TextView
+    private lateinit var btnOverlayToggle: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,8 +25,21 @@ class DiagActivity : AppCompatActivity() {
         tvChannels = findViewById(R.id.tvChannels)
         tvLog = findViewById(R.id.tvLog)
         tvAbout = findViewById(R.id.tvAbout)
+        btnOverlayToggle = findViewById(R.id.btnOverlayToggle)
 
         findViewById<MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
+
+        btnOverlayToggle.setOnClickListener {
+            val next = !EinkPrefs.isOverlayEnabled(this)
+            EinkPrefs.setOverlayEnabled(this, next)
+            if (!next) OverlayService.stop(this)
+            syncOverlayButton()
+            log(
+                if (next) "降级遮罩已开启。\n注意：它只能加色，无法灰度化，效果明显弱于系统级矩阵。"
+                else "降级遮罩已关闭。\n已 root / 已装 LSPosed 的机器不需要它。"
+            )
+        }
+        syncOverlayButton()
 
         findViewById<Button>(R.id.btnTestRaw).setOnClickListener {
             val ok = ConfigStore.testRawMatrix()
@@ -60,27 +73,39 @@ class DiagActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshChannels()
+        syncOverlayButton()
+    }
+
+    private fun syncOverlayButton() {
+        val on = EinkPrefs.isOverlayEnabled(this)
+        btnOverlayToggle.text = if (on) "降级遮罩：已开启（点击关闭）" else "降级遮罩：已关闭（点击开启）"
     }
 
     private fun refreshChannels() {
         Thread {
             val root = ConfigStore.hasRoot()
-            val confFile = File(ControlContract.CONF_FILE)
-            val confExists = confFile.exists()
-            val confText = if (confExists) {
-                try { confFile.readText().trim() } catch (_: Throwable) { "(读取失败)" }
-            } else "(尚未写入)"
+            val active = EinkPrefs.isModuleActive()
+            val mark = ConfigStore.probeModuleMark()
+            val confRaw = ControlContract.readRaw()
 
             runOnUiThread {
+                val confLine = if (confRaw.isBlank()) {
+                    "未写入（Android 16 SELinux 限制，需 su 授权；不影响开关）"
+                } else "已写入 ✓"
+
                 tvChannels.text = """
-① 文件通道（主，root-free）：${if (confExists) "可用 ✓" else "未写入 ✗"}
+① 广播通道（主，即时，root-free）：可用 ✓
+   指令直达 system_server 的动态接收器
+
+② 文件通道（持久化，需 root）：$confLine
    路径 ${ControlContract.CONF_FILE}
-   内容：$confText
+   内容：${if (confRaw.isBlank()) "（无）" else confRaw}
 
-② 广播通道（即时，root-free）：随配置一起发送
+③ setprop 通道（重启保持，需 root）：${if (root) "可用 ✓" else "未授权 su（重启后会回默认档）"}
 
-③ setprop 通道（可选，需 root）：${if (root) "可用 ✓" else "无 root，跳过（不影响功能）"}
-
+模块自检：${if (active) "已激活 ✓" else "未激活（作用域需勾「墨境」本身）"}
+激活标记：${if (mark) "存在 ✓" else "未检测到"}
+降级遮罩：${if (EinkPrefs.isOverlayEnabled(this)) "已开启" else "已关闭（默认）"}
 效果状态：${if (EinkPrefs.isEnabled(this)) "开启" else "已关闭"}
                 """.trimIndent()
             }
@@ -96,7 +121,8 @@ class DiagActivity : AppCompatActivity() {
 模块激活：${EinkPrefs.isModuleActive()}
 root：${ConfigStore.hasRoot()}
 效果：${if (EinkPrefs.isEnabled(this)) "开启" else "关闭"}
-配置：${try { File(ControlContract.CONF_FILE).readText().trim() } catch (_: Throwable) { "(无)" }}
+降级遮罩：${if (EinkPrefs.isOverlayEnabled(this)) "开启" else "关闭"}
+配置：${ControlContract.readRaw().ifBlank { "(无)" }}
         """.trimIndent()
 
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager

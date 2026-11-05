@@ -277,12 +277,18 @@ MiraVision 的 PQ 增强**主要在视频播放场景**介入（AI-PQ 是逐帧�
 三个都走同一套逻辑：下发单位矩阵 + 把关闭状态写入配置文件。
 **关闭后重启手机会保持关闭**，不会自己变回墨水屏。
 
-### 控制通道（0.2.0 重写）
+### 控制通道（0.2.2 修正）
 
 | 通道 | 需要 root | 作用 |
 |---|---|---|
-| 文件 `/data/local/tmp/inkwell.conf` | 否 | **主通道**，持久化，重启后保持 |
-| 广播 `com.inkwell.mode.ACTION_APPLY` | 否 | 即时生效，不用等轮询 |
-| `setprop persist.inkwell.*` | 是 | 可选增强，开机更早生效 |
+| 广播 `com.inkwell.mode.ACTION_APPLY` | 否 | **主通道**，直达 system_server，即时生效 |
+| `setprop persist.inkwell.*` | 是 | 重启后保持上次选择 |
+| 文件 `/data/system/inkwell.conf` | 是 | 兼容性备份，由 su 写入 |
 
-只要文件通道可用，功能就完整，**不需要 root**。
+⚠️ **Android 16 的 SELinux 不允许普通 App 直接写 `/data/local/tmp`
+或 `/data/system`**。0.2.2 及更早版本把文件通道当"root-free 主通道"是错的，
+会导致配置文件写不进去、开关失效。0.2.2 起改由广播承担 root-free 通道，
+文件与属性只作为有 root 时的持久化手段。
+
+只要广播能送达，开关就完整可用，**不需要 root、不需要悬浮窗**。
+有 root 并给墨境授权 su 后，重启会保持上次选择。

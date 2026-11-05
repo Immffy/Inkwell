@@ -78,10 +78,11 @@ class MainActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, DiagActivity::class.java))
         }
 
-        // 首次运行（或配置文件被清掉）时写一份默认配置。
-        // 否则模块侧在没文件时回落到 Kaleido 3 原始参数，暖度 0，
-        // 和界面上显示的「彩纸模式」对不上。
-        if (!java.io.File(ControlContract.CONF_FILE).exists()) {
+        // 首次运行时下发一份默认配置。
+        // 用本地标记而不是判断配置文件是否存在 —— App 在 Android 16 上
+        // 根本读不到 /data/system，exists() 永远 false，会每次启动都把
+        // 用户选的模式重置回彩纸。
+        if (!EinkPrefs.isInitialized(this)) {
             EinkPrefs.setMode(this, DisplayMode.COLOR_PAPER)
             ConfigStore.saveAndApply(
                 this,
@@ -89,6 +90,7 @@ class MainActivity : AppCompatActivity() {
                 DisplayMode.COLOR_PAPER,
                 true
             )
+            EinkPrefs.setInitialized(this)
         }
 
         syncState()
@@ -143,9 +145,10 @@ class MainActivity : AppCompatActivity() {
             val kind = EinkEngine.detect(this)
             runOnUiThread {
                 tvRoot.text = if (root) {
-                    "root：已获取 ✓（可选增强，开机更早生效）"
+                    "root：已获取 ✓（配置可持久化，重启后保持选择）"
                 } else {
-                    "root：未获取（不影响使用，开关走文件通道）"
+                    "root：未获取（开关仍可用，走广播通道）\n" +
+                    "若手机已 root，请在 Magisk / KernelSU 给「墨境」授权 su"
                 }
                 refreshEngine(kind)
             }
@@ -177,8 +180,10 @@ class MainActivity : AppCompatActivity() {
             }
             kind == EngineKind.NONE -> {
                 btnEngine.visibility = android.view.View.VISIBLE
-                btnEngine.text = "开启悬浮窗权限（启用遮罩模式）"
-                btnEngine.setOnClickListener { EinkEngine.openOverlaySettings(this) }
+                btnEngine.text = "查看排查步骤"
+                btnEngine.setOnClickListener {
+                    toast("① LSPosed 作用域勾「墨境」 ② 重启 ③ 给墨境授权 su")
+                }
             }
             EngineInfo.canUpgrade(kind) && kind == EngineKind.OVERLAY -> {
                 btnEngine.visibility = android.view.View.VISIBLE

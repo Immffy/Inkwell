@@ -51,7 +51,9 @@ class HookEntry : IXposedHookLoadPackage {
     private var mainHandler: Handler? = null
     private var systemContext: Context? = null
     /** 包名 → 三模之一（0.2.2：不再只是「切黑白档」） */
-    private var appRules: Map<String, String> = emptyMap()
+    @Volatile private var appRules: Map<String, String> = emptyMap()
+    /** 广播即时下发的模式（自定义时为空） */
+    @Volatile private var pushedMode: String? = null
     private var lastFingerprint = ""
     private var lastApp = ""
 
@@ -193,37 +195,62 @@ class HookEntry : IXposedHookLoadPackage {
                         if (intent.hasExtra(ControlContract.EXTRA_PRESET)) {
                             PropConfig.pushedPreset = intent.getStringExtra(ControlContract.EXTRA_PRESET)
                         }
-                        XLog.i("broadcast received: enabled=${PropConfig.pushedEnabled}")
+                        // 三模 + 按 App 规则：广播里直接带过来，切换立刻生效，不等轮询
+                        if (intent.hasExtra(ControlContract.EXTRA_MODE)) {
+                            pushedMode = intent.getStringExtra(ControlContract.EXTRA_MODE)
+                        }
+                        if (intent.hasExtra(ControlContract.EXTRA_RULES)) {
+                            appRules = ControlContract.parseRules(
+                                intent.getStringExtra(ControlContract.EXTRA_RULES) ?: ""
+                            )
+                        }
+                        XLog.i("broadcast received: enabled=${PropConfig.pushedEnabled} mode=$pushedMode rules=${appRules.size}")
                         applyNow()
                         // 应用后清掉瞬时值，后续以配置文件为准（保持一致）
                         PropConfig.clearPushed()
+                        pushedMode = null
                     } catch (t: Throwable) {
                         XLog.e("onReceive failed", t)
                     }
                 }
             }
             val filter = android.content.IntentFilter(ControlContract.ACTION_APPLY)
-            ctx.registerReceiver(receiver, filter)
+            // Android 13 (API 33) 起，接收跨进程广播的动态 receiver 必须显式声明
+            // exported，否则 registerReceiver 会抛 SecurityException —— 系统进程也不一定豁免。
+            // 用 RECEIVER_EXPORTED，因为发送方是另一个 App 进程。
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                ctx.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                ctx.registerReceiver(receiver, filter)
+            }
             XLog.i("control receiver registered (root-free instant channel)")
         } catch (t: Throwable) {
             XLog.e("register receiver failed", t)
         }
     }
 
-    /** 写激活标记（best-effort，失败不影响主流程） */
+    /**
+     * 写激活标记（best-effort，失败不影响主流程）。
+     *
+     * 0.2.2：改写到 /data/system —— 这是 system_server 自己的目录，必定可写；
+     * 旧的 /data/local/tmp 属 shell_data_file，system_server 域未必有权限，
+     * 结果就是标记一直没写成，App 误以为模块没接管、进而叠了遮罩。
+     */
     private fun markActive() {
-        try {
-            val f = java.io.File("/data/local/tmp/inkwell.module.active")
-            if (!f.exists()) {
-                f.parentFile?.mkdirs()
-                f.writeText("pid=${android.os.Process.myPid()}\n")
-                try {
-                    Runtime.getRuntime().exec(arrayOf("chmod", "644", f.absolutePath))
-                } catch (_: Throwable) { }
-                XLog.i("module active mark written")
+        for (path in arrayOf(ControlContract.ACTIVE_MARK, ControlContract.LEGACY_ACTIVE_MARK)) {
+            try {
+                val f = java.io.File(path)
+                if (!f.exists()) {
+                    f.parentFile?.mkdirs()
+                    f.writeText("pid=${android.os.Process.myPid()}\n")
+                    try {
+                        Runtime.getRuntime().exec(arrayOf("chmod", "644", f.absolutePath))
+                    } catch (_: Throwable) { }
+                    XLog.i("module active mark written: $path")
+                }
+            } catch (t: Throwable) {
+                XLog.w("markActive($path) failed: ${t.message}")
             }
-        } catch (t: Throwable) {
-            XLog.w("markActive failed: ${t.message}")
         }
     }
 
@@ -274,14 +301,20 @@ class HookEntry : IXposedHookLoadPackage {
     /**
      * 综合全局参数 + 按 App 规则决定最终参数。
      *
-     * 优先级：前台 App 的专属规则 > 全局三模。
-     * 这样给「相机」设原色、「微信读书」设墨纸后，切换 App 会自动换档，
-     * 比联想那台需要手动切更省事。
+     * 优先级：前台 App 专属规则 > 广播即时三模 > 配置文件三模 > 数值参数。
+     * 「自定义参数」不在 DisplayMode.ALL 里，会落到最后一项，保留用户拖的滑块值。
      */
     private fun currentParams(): EinkParams {
         val base = PropConfig.loadParams()
-        val mode = appRules[lastApp] ?: return base
-        return DisplayMode.params(mode)
+        val rule = appRules[lastApp]
+        if (rule != null) return DisplayMode.params(rule)
+
+        val pushed = pushedMode
+        if (!pushed.isNullOrBlank() && pushed in DisplayMode.ALL) return DisplayMode.params(pushed)
+
+        val confMode = PropConfig.loadMode()
+        if (confMode in DisplayMode.ALL) return DisplayMode.params(confMode)
+        return base
     }
 
     private fun scheduleApply(delayMs: Long) {

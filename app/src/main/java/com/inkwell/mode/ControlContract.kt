@@ -5,29 +5,26 @@ import java.io.File
 /**
  * App 与模块之间的控制协议（两侧共享同一份常量）。
  *
- * ── 为什么需要「不依赖 root」的通道 ──
+ * ── 0.2.2 重要修正 ──
  *
- * 最初只用 setprop（需要 root）。但很多用户没给 App root 授权，
- * 结果所有开关都写不进去 —— 最严重的后果是「关不掉效果」。
+ * 之前把配置文件放在 /data/local/tmp，并假设"App 可直接写、system_server 可读"。
+ * 这在 Android 16 上是错的：
+ *   · /data/local/tmp 属主是 shell:shell，普通 app 进程（untrusted_app 域）
+ *     在 SELinux 下**没有写权限** → App 侧 f.writeText() 抛 EACCES
+ *   · 即便侥幸写成功，该目录的 SELinux label 是 shell_data_file，
+ *     system_server 域也未必有读权限
  *
- * 现在双通道：
+ * 结果就是：诊断页那个"文件通道 未写入 ✗"。开关指令从来没进过配置文件，
+ * 模块一直按默认参数（Kaleido 3）自己生效 —— 这也解释了最早"关不掉"。
  *
- *  ① 文件通道（主，root-free，可持久化）
- *     App 写 /data/local/tmp/inkwell.conf 并 chmod 644。
- *     system_server（uid 1000）能读该目录，无需 root。
- *     模块每 2 秒轮询 → 保证重启后按上次的开关状态恢复。
+ * 现在改为：
+ *   · 配置文件 → /data/system/inkwell.conf（system_server 自己的目录，必可读），
+ *     由 App 通过 su 写入；没 root 时退回广播，不再谎报成功
+ *   · 广播去掉 setPackage 限制 → 直达 system_server 的动态接收器，
+ *     这是真正 root-free 的即时通道
+ *   · setprop（需 root）负责重启后保持
  *
- *  ② 广播通道（辅助，root-free，即时）
- *     App 发广播，模块立即应用 → 不用等轮询的 2 秒。
- *     若广播被 ROM 拦掉，文件通道仍会在 2 秒内兜底生效。
- *
- *  ③ setprop（可选增强，需 root）
- *     有 root 时额外写入 persist.inkwell.*，开机更早生效。
- *     没有也完全不影响功能。
- *
- * ── 0.2.2 新增字段 ──
- *   warmth / mode / rules。全部带默认值，旧版 App 写出来的文件
- *   新版模块能读，新版 App 写出来的文件旧版模块也能读（只是忽略新字段）。
+ * 旧路径仍保留读取兼容，升级时不会丢上次的选择。
  */
 object ControlContract {
 
@@ -39,21 +36,31 @@ object ControlContract {
     const val EXTRA_WHITE = "white"
     const val EXTRA_WARMTH = "warmth"
     const val EXTRA_PRESET = "preset"
+    const val EXTRA_MODE = "mode"
+    const val EXTRA_RULES = "rules"
 
-    /** 配置文件（root-free 主通道） */
-    const val CONF_FILE = "/data/local/tmp/inkwell.conf"
+    /** 配置文件（system_server 域必可读；App 需经 su 写入） */
+    const val CONF_FILE = "/data/system/inkwell.conf"
+
+    /** 0.2.2 及更早的路径，仅作读取兼容 */
+    const val LEGACY_CONF_FILE = "/data/local/tmp/inkwell.conf"
+
+    /** 模块激活标记（system_server 写、App 经 su 探测） */
+    const val ACTIVE_MARK = "/data/system/inkwell.active"
+
+    /** 旧版激活标记，探测时一起看 */
+    const val LEGACY_ACTIVE_MARK = "/data/local/tmp/inkwell.module.active"
+
+    /** 按 App 规则的独立文件（避免配置文件过长） */
+    const val RULES_FILE = "/data/system/inkwell_rules.conf"
 
     /** 黑白档 App 名单（旧字段，保留兼容） */
     const val BW_APPS_FILE = "/data/local/tmp/inkwell_bw_apps.txt"
 
-    /** 配置指纹：内容变了才重新应用，避免每 2 秒无谓重设 */
     fun fingerprint(conf: String): String = conf
 
     /**
-     * 序列化配置。
-     * 用简单 key=value 行，避免依赖 JSON 库（模块运行在 system_server，越轻越好）。
-     *
-     * 新参数都带默认值，所以旧的四参数调用点不用改也能编译。
+     * 序列化配置。新参数都带默认值，旧调用点不用改也能编译。
      */
     fun serialize(
         enabled: Boolean,
@@ -70,12 +77,29 @@ object ControlContract {
         append("warmth=").append("%.4f".format(p.warmth)).append('\n')
         append("preset=").append(preset).append('\n')
         append("mode=").append(mode).append('\n')
-        // 按 App 指定显示模式：pkg:mode;pkg:mode
         append("rules=").append(
             rules.entries.joinToString(";") { "${it.key}:${it.value}" }
         ).append('\n')
-        // 旧字段继续写，方便旧版模块/降级场景读取
         append("bw=").append(bwApps.joinToString(";")).append('\n')
+    }
+
+    fun serializeRules(rules: Map<String, String>): String =
+        rules.entries.joinToString("\n") { "${it.key}=${it.value}" }
+
+    fun parseRules(text: String): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        text.lineSequence().forEach { line ->
+            val s = line.trim()
+            if (s.isBlank() || s.startsWith("#")) return@forEach
+            val i = s.indexOf('=')
+            if (i > 0) {
+                val mode = s.substring(i + 1).trim()
+                if (mode in DisplayMode.ALL) out[s.substring(0, i).trim()] = mode
+            } else {
+                out[s] = DisplayMode.INK_PAPER
+            }
+        }
+        return out
     }
 
     fun parse(text: String): Conf {
@@ -88,7 +112,6 @@ object ControlContract {
                 if (i > 0) m[line.substring(0, i).trim()] = line.substring(i + 1).trim()
             }
 
-        // 新字段 rules= 优先；旧字段 bw= 兜底（一律按墨纸模式解释）
         val rules = LinkedHashMap<String, String>()
         val rawRules = m["rules"] ?: ""
         if (rawRules.isNotBlank()) {
@@ -123,13 +146,26 @@ object ControlContract {
         )
     }
 
+    /** 优先读新路径，回落旧路径 */
     fun read(): Conf {
-        return try {
-            val f = File(CONF_FILE)
-            if (f.exists()) parse(f.readText()) else Conf()
-        } catch (_: Throwable) {
-            Conf()
+        for (path in arrayOf(CONF_FILE, LEGACY_CONF_FILE)) {
+            try {
+                val f = File(path)
+                if (f.exists()) return parse(f.readText())
+            } catch (_: Throwable) { /* 试下一个 */ }
         }
+        return Conf()
+    }
+
+    /** 读配置文件原文（诊断页用） */
+    fun readRaw(): String {
+        for (path in arrayOf(CONF_FILE, LEGACY_CONF_FILE)) {
+            try {
+                val f = File(path)
+                if (f.exists()) return f.readText().trim()
+            } catch (_: Throwable) { }
+        }
+        return ""
     }
 
     data class Conf(
@@ -141,10 +177,8 @@ object ControlContract {
         val preset: String = "",
         val mode: String = "",
         val bwApps: Set<String> = emptySet(),
-        /** 包名 → 三模之一 */
         val rules: Map<String, String> = emptyMap()
     ) {
-        /** 配置文件里是否带了有效参数（用来判断该不该覆盖 SystemProperties） */
         fun hasParams(): Boolean =
             sat != null || black != null || white != null || preset.isNotBlank()
     }

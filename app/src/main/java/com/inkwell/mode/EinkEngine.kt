@@ -2,105 +2,82 @@ package com.inkwell.mode
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 
 /**
- * 统一执行入口：按可用通道自动分发。
+ * 统一执行入口：按可用通道自动分发（0.2.2 修正）。
  *
- * 优先级（能力从强到弱）：
- *   ① LSPosed  —— 开机自启、覆盖最全
- *   ② Shizuku  —— 效果等同 ①，但重启后需重新启用一次
- *   ③ 遮罩      —— 零依赖，观感降级
+ * ── 修正了什么 ──
  *
- * 同一个 APK 在 root / 非 root 机器上都能用，靠的就是这里的自动选择。
- * 用户不需要理解区别，App 自己挑最好的那条路。
+ * 0.2.2 的 detect() 只判断 Shizuku 和悬浮窗权限，从未返回 LSPOSED。
+ * 于是只要没装 Shizuku、而 App 恰好有悬浮窗权限，就会被判成「遮罩模式（降级）」
+ * 并自动叠一层窗口 —— 哪怕用户已经 root、LSPosed 模块正在 system_server 里正常工作。
+ * 这正是"点了开启却给我开遮罩"的原因。
+ *
+ * 现在：
+ *   · 优先识别 LSPosed（模块自检 hook / 激活标记）
+ *   · 遮罩改为**默认关闭**，只有用户在诊断页显式打开才会启用
+ *   · 配置下发由 ConfigStore 负责，这里不再重复写文件
  */
 object EinkEngine {
 
-    /**
-     * 检测当前可用引擎。
-     *
-     * LSPosed 是否激活的判断：模块激活探测器需要模块侧配合，
-     * 这里用「HookEntry 是否写入过标记」间接判断；
-     * 检测不到不代表没生效（可能只是作用域没勾本 App），
-     * 所以 LSPosed 激活与否不影响 Shizuku 的判断 —— 两者可共存。
-     */
+    /** detect() 的结果缓存，避免在 UI 线程重复起 su 进程 */
+    @Volatile
+    private var cachedKind: EngineKind = EngineKind.NONE
+
     fun detect(ctx: Context): EngineKind {
+        val k = detectSlow(ctx)
+        cachedKind = k
+        return k
+    }
+
+    private fun detectSlow(ctx: Context): EngineKind {
         ShizukuEngine.refresh()
-        if (ShizukuEngine.available && ShizukuEngine.granted) return EngineKind.SHIZUKU
-        if (ShizukuEngine.available) return EngineKind.SHIZUKU   // 未授权也走它，UI 会提示授权
-        if (OverlayService.hasPermission(ctx)) return EngineKind.OVERLAY
+        if (ShizukuEngine.available) return EngineKind.SHIZUKU
+        if (isLikelyLsposed()) return EngineKind.LSPOSED
+        if (EinkPrefs.isOverlayEnabled(ctx) && OverlayService.hasPermission(ctx)) {
+            return EngineKind.OVERLAY
+        }
         return EngineKind.NONE
     }
 
     /**
-     * 真正生效的引擎。
+     * 真正生效的引擎动作。
      *
-     * 注意：LSPosed 通道由模块侧轮询 /data/local/tmp/inkwell.conf 生效，
-     * 不经过这里。所以这里只需保证「LSPosed 没接管时」还有别的路可走。
+     * 注意：文件/广播/setprop 三条通道都在 ConfigStore 里写好了，
+     * LSPosed 模块自己会读；这里只负责「没有系统级通道时」的补充。
      */
     fun apply(ctx: Context, p: EinkParams, enabled: Boolean): ApplyResult {
-        // ① 文件通道：LSPosed 模块会读它。无 root 也能写，且重启后保持。
-        val fileOk = writeConf(ctx, p, enabled)
-
-        // ② Shizuku：有则立刻下发（不等模块轮询）
         var shizukuOk = false
         ShizukuEngine.refresh()
         if (ShizukuEngine.available && ShizukuEngine.granted) {
             shizukuOk = ShizukuEngine.apply(p, enabled)
         }
 
-        // ③ 遮罩：只有当 Shizuku 不可用时才启用，避免两层叠加
+        // 遮罩：必须同时满足「用户显式开启」「不是系统级通道」「无 Shizuku」。
+        // 默认关闭 —— 已 root / 已装 LSPosed 的机器绝不会莫名叠一层窗口。
         var overlay = false
-        if (!shizukuOk && !isLikelyLsposed()) {
-            if (OverlayService.hasPermission(ctx)) {
-                if (enabled) OverlayService.start(ctx, p, true) else OverlayService.stop(ctx)
-                overlay = enabled
-            }
+        if (!shizukuOk && !isLikelyLsposedFast() &&
+            EinkPrefs.isOverlayEnabled(ctx) && OverlayService.hasPermission(ctx)) {
+            if (enabled) OverlayService.start(ctx, p, true) else OverlayService.stop(ctx)
+            overlay = enabled
         }
 
         return ApplyResult(
-            fileOk = fileOk,
+            fileOk = true,  // 由 ConfigStore 负责，这里不重复写
             shizukuOk = shizukuOk,
             overlayShown = overlay,
-            kind = detect(ctx)
+            kind = cachedKind
         )
     }
 
-    /**
-     * 判断是否有 LSPosed 模块在接管。
-     *
-     * 模块激活探测器会写 /data/local/tmp/inkwell.module.active，
-     * 若存在说明模块侧活着，此时不能再叠遮罩（会双重叠加）。
-     */
-    private fun isLikelyLsposed(): Boolean {
-        return try {
-            java.io.File("/data/local/tmp/inkwell.module.active").exists()
-        } catch (_: Throwable) {
-            false
-        }
-    }
+    /** 完整判定（含 su 探测），只在后台线程调用 */
+    private fun isLikelyLsposed(): Boolean =
+        EinkPrefs.isModuleActive() || ConfigStore.probeModuleMark()
 
-    private fun writeConf(ctx: Context, p: EinkParams, enabled: Boolean): Boolean {
-        EinkPrefs.save(ctx, p)
-        EinkPrefs.setEnabled(ctx, enabled)
-        val preset = EinkPrefs.getPreset(ctx)
-        val bw = EinkPrefs.getAppRulesSet(ctx)
-        val mode = EinkPrefs.getMode(ctx)
-        val rules = EinkPrefs.getAppRuleModes(ctx)
-        val text = ControlContract.serialize(enabled, p, preset, bw, mode, rules)
-        return try {
-            val f = java.io.File(ControlContract.CONF_FILE)
-            f.parentFile?.mkdirs()
-            f.writeText(text)
-            try {
-                Runtime.getRuntime().exec(arrayOf("chmod", "644", f.absolutePath)).waitFor()
-            } catch (_: Throwable) { }
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
+    /** 快速判定，UI 线程安全（不启动进程） */
+    private fun isLikelyLsposedFast(): Boolean = EinkPrefs.isModuleActive()
 
     /** 打开悬浮窗权限设置页（遮罩模式需要） */
     fun openOverlaySettings(ctx: Context) {
@@ -109,7 +86,7 @@ object EinkEngine {
                 ctx.startActivity(
                     Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:${ctx.packageName}")
+                        Uri.parse("package:${ctx.packageName}")
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
             }

@@ -70,6 +70,12 @@ object EinkPrefs {
     const val K_ENABLED = "enabled"
     const val K_PRESET = "preset"
 
+    /** 是否允许降级遮罩。默认 false —— 不主动给用户叠窗口 */
+    const val K_OVERLAY = "overlay_enabled"
+
+    /** 是否已经下发过默认配置。避免每次启动都把用户的模式重置回彩纸 */
+    const val K_INIT = "initialized"
+
     /** 当前三模（原色 / 彩纸 / 墨纸）；空串表示自定义参数 */
     const val K_MODE = "mode"
 
@@ -112,6 +118,18 @@ object EinkPrefs {
     fun isEnabled(ctx: Context) = prefs(ctx).getBoolean(K_ENABLED, true)
     fun setEnabled(ctx: Context, on: Boolean) =
         prefs(ctx).edit().putBoolean(K_ENABLED, on).apply()
+
+    /**
+     * 降级遮罩开关，**默认关闭**。
+     * 只有明确需要（例如给没 root 的机器临时体验）时才打开。
+     */
+    fun isOverlayEnabled(ctx: Context) = prefs(ctx).getBoolean(K_OVERLAY, false)
+    fun setOverlayEnabled(ctx: Context, on: Boolean) =
+        prefs(ctx).edit().putBoolean(K_OVERLAY, on).apply()
+
+    fun isInitialized(ctx: Context) = prefs(ctx).getBoolean(K_INIT, false)
+    fun setInitialized(ctx: Context) =
+        prefs(ctx).edit().putBoolean(K_INIT, true).apply()
 
     /**
      * 返回非空 String。

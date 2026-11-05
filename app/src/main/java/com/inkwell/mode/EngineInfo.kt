@@ -42,7 +42,8 @@ object EngineInfo {
     fun description(kind: EngineKind): String = when (kind) {
         EngineKind.LSPOSED ->
             "在系统进程注入全局色彩矩阵。\n" +
-            "零延迟、零耗电、覆盖状态栏和全部界面，开机自动生效。"
+            "零延迟、零耗电、覆盖状态栏和全部界面，开机自动生效。\n" +
+            "开关指令通过广播直达 system_server，无需悬浮窗、无需遮罩。"
 
         EngineKind.SHIZUKU ->
             "通过 Shizuku 获得 adb shell 权限后下发同样的色彩矩阵。\n" +
@@ -59,8 +60,12 @@ object EngineInfo {
             "装一个 Shizuku 即可自动升级到完整效果，无需换版本。"
 
         EngineKind.NONE ->
-            "没有可用通道。\n" +
-            "遮罩模式需要悬浮窗权限，可在下方按钮前往开启。"
+            "没有检测到系统级通道。\n\n" +
+            "若你已 root 并启用了 LSPosed 模块：\n" +
+            "① 作用域除了「系统框架」，还要勾「墨境」本身\n" +
+            "② 重启手机\n" +
+            "③ 若显示「root：未获取」，去 Magisk / KernelSU 给墨境授权 su\n\n" +
+            "降级遮罩默认关闭，不会自动叠窗口。真需要时可在诊断页手动开启。"
     }
 
     /** 是否需要在 UI 上提示"可以升级到完整效果" */

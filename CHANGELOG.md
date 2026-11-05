@@ -13,9 +13,53 @@
 
 ---
 
-## [0.2.2] - 2026-11-03
+## [0.2.2] - 2026-11-05
 
-参考联想小新 10.1 彩墨柔光版的「一屏三模」思路重构显示模式。
+参考联想小新 10.1 彩墨柔光版的「一屏三模」思路重构显示模式，
+并修复了开关指令送不进系统进程的问题。
+
+### 修复（重要）：开关指令从来没送进过配置文件
+
+诊断页暴露了一个从 0.2.0 就存在的设计错误：
+
+**原假设**：`/data/local/tmp` 全局可写，App 直接写配置、system_server 直接读，
+不需要 root。**实际**：Android 16 的 SELinux 下，普通 app 进程
+（untrusted_app 域）对 `/data/local/tmp` 和 `/data/system` **都没有写权限**，
+`f.writeText()` 抛 EACCES → 诊断页显示「文件通道 未写入 ✗」、
+预设页弹「配置文件写入失败」。
+
+指令从未送达，模块一直按默认参数（Kaleido 3）自己生效 ——
+这正是一开始「关不掉效果」的真正原因。0.2.0 那次"root-free 修复"
+在已 root 的机器上其实没生效过。
+
+**修正：**
+
+- **广播改为主通道**：去掉 `sendBroadcast` 里的 `setPackage(ctx.packageName)`。
+  接收器是模块注册在 system_server 的**动态** receiver（包名 android），
+  加上 setPackage 后广播被限制成"只发给墨境自己"，永远送不到。
+  动态注册不受 Android 8+ 隐式广播限制，去掉后指令 root-free 即时送达。
+- **配置文件改到 `/data/system/inkwell.conf`**（system_server 自己的目录），
+  由 App 经 `su` 写入；直接写失败是预期行为，不再报"失败"吓人。
+- **setprop 补齐 `preset` / `mode` / `warmth`**，有 root 时重启后保持三模选择。
+- 按 App 规则单独存 `/data/system/inkwell_rules.conf`。
+- 旧路径仍保留读取兼容，升级不丢配置。
+
+### 修复：已 root + 已装 LSPosed 却被判成「遮罩模式（降级）」
+
+`detect()` 原先只判断 Shizuku 和悬浮窗权限，**从未返回 LSPOSED**。
+只要没装 Shizuku 而 App 有悬浮窗权限，就被判成 OVERLAY 并自动叠一层窗口。
+
+- `detect()` 现在优先识别 LSPosed（模块自检 hook / 激活标记）
+- 模块激活标记改写到 `/data/system/inkwell.active`（system_server 必可写）
+- **降级遮罩默认关闭**，只有用户在诊断页显式开启才会启用，
+  已 root / 已装 LSPosed 的机器绝不会莫名叠窗口
+- 诊断页加「降级遮罩」开关，并如实说明文件未写入只代表没给 su 授权
+
+### 其他
+
+- 首次运行判断改用本地标记（原来判断 `/data/system` 文件是否存在，
+  App 读不到导致每次启动都把模式重置回彩纸）
+- 诊断页通道状态重写，排查顺序补上「作用域勾墨境本身」和「授权 su」
 
 ### 新增：一屏三模
 
@@ -57,7 +101,7 @@ Spectra 6 / 关闭效果）收进「进阶档位」折叠区，没删，随时�
 alpha 混合在数学上无法灰度化。主界面已明确写出这一点，
 避免用户以为 App 坏了。装 Shizuku 后自动升级到完整效果。
 
-### 修复
+### 修复：Shizuku 反射调用
 
 - 保留 0.2.1 的 Shizuku 反射调用修复（`newProcess` 是库内隐藏方法，
   直接调用会编译报 "cannot access private static fun newProcess"）

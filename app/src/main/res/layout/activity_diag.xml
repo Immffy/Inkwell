@@ -56,9 +56,25 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="只要「文件通道」可用，开关就能正常工作，不需要 root。setprop 是可选增强。"
+                android:text="开关指令通过广播直达 system_server，root-free 且即时。有 root 时额外写 setprop / 配置文件，用于重启后保持上次选择。\n\nAndroid 16 的 SELinux 不允许普通 App 直接写 /data/system 或 /data/local/tmp，所以「文件通道未写入」只代表没给 su 授权，不代表开关失效。"
                 android:textColor="#888888"
-                android:textSize="11sp" />
+                android:textSize="11sp"
+                android:lineSpacingExtra="2dp" />
+
+            <Button
+                android:id="@+id/btnOverlayToggle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="降级遮罩：已关闭（点击开启）" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="遮罩默认关闭。已 root / 已装 LSPosed 的机器不需要它；只有给无 root 手机临时体验时才开。"
+                android:textColor="#999999"
+                android:textSize="10.5sp" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -118,7 +134,7 @@
                 android:layout_marginTop="6dp"
                 android:background="#FFFFFF"
                 android:padding="12dp"
-                android:text="① LSPosed 日志搜 Inkwell，应有 applied\n② 模块状态显示已激活\n③ 文件通道可用（见上方）\n④ 屏幕实际效果变了没\n⑤ 天玑机型：护眼/真彩/AI画质引擎是否已关"
+                android:text="① LSPosed 作用域勾「系统框架」和「墨境」本身，重启\n② 模块状态显示已激活 ✓\n③ 若已 root，在 Magisk / KernelSU 给墨境授权 su\n④ LSPosed 日志搜 Inkwell，应有 applied\n⑤ 屏幕实际效果变了没\n⑥ 天玑机型：护眼/真彩/AI 画质引擎是否已关"
                 android:textColor="#555555"
                 android:textSize="12sp"
                 android:lineSpacingExtra="4dp" />
