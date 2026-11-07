@@ -31,7 +31,9 @@ object DisplayMode {
 
     fun params(mode: String): EinkParams = when (mode) {
         ORIGINAL -> EinkParams.OFF.copy(warmth = 0f)
-        COLOR_PAPER -> EinkParams.KALEIDO3.copy(warmth = 0.55f)
+        // 0.2.2 校准：对标 Gallery 3 的"底白 + 显色好"，并按本机自发光
+        // OLED / P3 / 12bit 重算，详见 EinkParams.PAPER_COLOR 注释与 README 十一
+        COLOR_PAPER -> EinkParams.PAPER_COLOR
         INK_PAPER -> EinkParams.PAPER_BW.copy(warmth = 1.0f)
         else -> EinkParams.KALEIDO3
     }
@@ -47,7 +49,8 @@ object DisplayMode {
 
         COLOR_PAPER ->
             "故事绘本 · 科普启蒙 · 漫画\n" +
-            "压低高饱和、柔化刺眼高光，像彩色铜版纸绘本。保留颜色，但不刺眼。"
+            "底白、色柔但不发灰：按 Gallery 3 实测色域与本机 OLED 重校准。" +
+            "比旧版更通透、颜色更干净，看彩图不再蒙一层灰。"
 
         INK_PAPER ->
             "古典诗词 · 外语短文 · 小说 PDF\n" +

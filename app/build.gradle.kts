@@ -18,7 +18,7 @@ plugins {
 //  0.x.x = 原型验证期（随时可能大改）；1.0.0 = 自己日常用稳定
 //
 //  versionCode 由版本号自动推导：MAJOR*10000 + MINOR*100 + PATCH
-//    0.1.0 → 100 / 0.2.0 → 200 / 0.2.1 → 201 / 0.2.2 → 202
+//    0.1.0 → 100 / 0.2.0 → 200 / 0.2.1 → 201 / 0.2.2 → 202 / 0.2.3 → 203
 //    1.0.0 → 10000 / 1.2.3 → 10203
 //  好处：天然单调递增，永远不会出现「改了 versionName 忘了 versionCode」
 //
@@ -26,7 +26,7 @@ plugins {
 // ════════════════════════════════════════════════════════════════
 val versionMajor = 0
 val versionMinor = 2
-val versionPatch = 2
+val versionPatch = 3
 val versionSuffix = "" // 预发布用 "-alpha.1" / "-beta.1"，正式版留空
 
 val computedVersionCode = versionMajor * 10000 + versionMinor * 100 + versionPatch

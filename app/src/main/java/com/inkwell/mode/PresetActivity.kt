@@ -230,10 +230,12 @@ class PresetActivity : AppCompatActivity() {
 
     private fun paramsToUi() {
         updating = true
-        sbSat.progress = (params.saturation * 100).toInt().coerceIn(0, 100)
-        sbBlack.progress = (params.black * 100).toInt().coerceIn(0, 60)
-        sbWhite.progress = ((params.white - 0.6f) * 100).toInt().coerceIn(0, 40)
-        sbWarm.progress = (params.warmth * 100).toInt().coerceIn(0, 100)
+        // +0.5 四舍五入：0.97f 用裸 toInt() 会算成 36（浮点 36.999...），
+        // 滑块一进页面就显示 0.96，和真实下发的参数对不上。
+        sbSat.progress = (params.saturation * 100f + 0.5f).toInt().coerceIn(0, 100)
+        sbBlack.progress = (params.black * 100f + 0.5f).toInt().coerceIn(0, 60)
+        sbWhite.progress = ((params.white - 0.6f) * 100f + 0.5f).toInt().coerceIn(0, 40)
+        sbWarm.progress = (params.warmth * 100f + 0.5f).toInt().coerceIn(0, 100)
         updateLabels()
         updating = false
     }

@@ -42,6 +42,44 @@ data class EinkParams(
         val PAPER_BW = EinkParams(0.00f, 0.08f, 0.96f, warmth = 0.85f)
         val OFF      = EinkParams(1.00f, 0.00f, 1.00f)
 
+        /**
+         * 彩纸模式调校值（0.2.2 校准版）。
+         *
+         * 对标的是「目前量产里色彩表现最好的阅读向彩色电子纸」——
+         * E Ink Gallery 3（reMarkable Paper Pro）：无 CFA 滤光片、
+         * 底色更白、显色明显好于 Kaleido 3 的粉彩感。
+         * 不用 Spectra 6（30:1 对比、宽色域），那是零售标牌面板，
+         * 刷新 12 秒，观感太浓艳，不是阅读场景的参照。
+         *
+         * 数值依据：
+         *  - 饱和度 0.68：Kaleido 3 实测 sRGB 覆盖 41.3%（Kobo Clara Colour /
+         *    CS-2000A 分光辐射计）到 58.7%（海信 A9 Pro）。色域面积 ∝ s²，
+         *    等效 s ≈ 0.64–0.77，取 0.68 落在实测区间内；Gallery 3 显色更好，
+         *    故不取下限。0.68 相对旧的 0.45 明显更"有颜色"，但仍远低于原色 1.0。
+         *  - 黑位 0.09：电子纸的墨黑不是纯黑（反射式，受环境光限制），
+         *    彩色层对比还比单色低 10–15%。旧值 0.16 把黑抬得太高，画面发灰、
+         *    文字发虚。0.09 也正好避开 AMOLED 极低驱动电流下的低灰阶 mura / 绿粉偏色。
+         *  - 白位 0.97：Gallery 3 无滤光片、底色更白；Kaleido 3 的"灰底"是
+         *    滤光片吸光的缺陷，不是优点。而且本机是**自发光 OLED**，
+         *    白是发光像素 —— 压白位只会把白变灰、显脏，不等于"变纸"。
+         *    纸感改由暖色偏移 + 抬黑位承担。
+         *  - 暖度 0.32：纸白本身是中性偏冷，暖味来自 ComfortGaze 前光。
+         *    实测暖前光会把彩色染黄、让颜色 washed out。旧的 0.55 偏黄发闷，
+         *    降到 0.32 保留一点点纸温，又不吃掉蓝绿。
+         *
+         * 合成后的显示端对比 ≈ 0.97 / 0.09 ≈ 10.8:1，落在彩色电子纸
+         * 对比量级内（旧值 0.92/0.16 ≈ 5.8:1，灰得过头）。
+         *
+         * ⚠️ 不改 KALEIDO3 / GALLERY3 等进阶档：它们保留为"复刻 Kaleido 3 淡彩"
+         * 的可回退档位，想回到旧观感在进阶档里选即可。
+         */
+        val PAPER_COLOR = EinkParams(
+            saturation = 0.68f,
+            black = 0.09f,
+            white = 0.97f,
+            warmth = 0.32f
+        )
+
         fun presetList() = linkedMapOf(
             "Kaleido 3（默认）" to KALEIDO3,
             "Gallery 3（更艳）" to GALLERY3,
@@ -73,8 +111,14 @@ object EinkPrefs {
     /** 是否允许降级遮罩。默认 false —— 不主动给用户叠窗口 */
     const val K_OVERLAY = "overlay_enabled"
 
+    /** 是否已开启通知栏快捷按钮。默认 false —— 不主动弹常驻通知 */
+    const val K_QUICK_NOTIFY = "quick_notify_enabled"
+
     /** 是否已经下发过默认配置。避免每次启动都把用户的模式重置回彩纸 */
     const val K_INIT = "initialized"
+
+    /** 是否已完成 0.2.2 彩纸参数迁移。只跑一次，绝不覆盖用户手动调过的值 */
+    const val K_CALIBRATED = "calibrated_0_2_2"
 
     /** 当前三模（原色 / 彩纸 / 墨纸）；空串表示自定义参数 */
     const val K_MODE = "mode"
@@ -89,11 +133,13 @@ object EinkPrefs {
 
     fun load(ctx: Context): EinkParams {
         val p = prefs(ctx)
+        // 无本地存档时回退到 0.2.2 校准值，避免清数据后闪回旧的灰淡彩。
+        // 进阶档的四个 shader 参数（levels/grain/cfa/cell）仍用 KALEIDO3 的基值。
         return EinkParams(
-            saturation = p.getFloat(K_SAT, EinkParams.KALEIDO3.saturation),
-            black = p.getFloat(K_BLACK, EinkParams.KALEIDO3.black),
-            white = p.getFloat(K_WHITE, EinkParams.KALEIDO3.white),
-            warmth = p.getFloat(K_WARMTH, EinkParams.KALEIDO3.warmth),
+            saturation = p.getFloat(K_SAT, EinkParams.PAPER_COLOR.saturation),
+            black = p.getFloat(K_BLACK, EinkParams.PAPER_COLOR.black),
+            white = p.getFloat(K_WHITE, EinkParams.PAPER_COLOR.white),
+            warmth = p.getFloat(K_WARMTH, EinkParams.PAPER_COLOR.warmth),
             levels = p.getFloat(K_LEVELS, EinkParams.KALEIDO3.levels),
             grain = p.getFloat(K_GRAIN, EinkParams.KALEIDO3.grain),
             cfa = p.getFloat(K_CFA, EinkParams.KALEIDO3.cfa),
@@ -127,9 +173,19 @@ object EinkPrefs {
     fun setOverlayEnabled(ctx: Context, on: Boolean) =
         prefs(ctx).edit().putBoolean(K_OVERLAY, on).apply()
 
+    /** 通知栏快捷按钮，默认关闭，由用户在「快捷按钮」页显式开启 */
+    fun isQuickNotifyEnabled(ctx: Context) =
+        prefs(ctx).getBoolean(K_QUICK_NOTIFY, false)
+    fun setQuickNotifyEnabled(ctx: Context, on: Boolean) =
+        prefs(ctx).edit().putBoolean(K_QUICK_NOTIFY, on).apply()
+
     fun isInitialized(ctx: Context) = prefs(ctx).getBoolean(K_INIT, false)
     fun setInitialized(ctx: Context) =
         prefs(ctx).edit().putBoolean(K_INIT, true).apply()
+
+    fun isCalibrated(ctx: Context) = prefs(ctx).getBoolean(K_CALIBRATED, false)
+    fun setCalibrated(ctx: Context) =
+        prefs(ctx).edit().putBoolean(K_CALIBRATED, true).apply()
 
     /**
      * 返回非空 String。

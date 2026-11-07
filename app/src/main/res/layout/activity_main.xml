@@ -177,6 +177,13 @@
                 android:text="按 App 指定模式" />
 
             <Button
+                android:id="@+id/btnQuick"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="快捷按钮（桌面图标 / 通知栏 / 磁贴）" />
+
+            <Button
                 android:id="@+id/btnDiag"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

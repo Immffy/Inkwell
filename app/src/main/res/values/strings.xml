@@ -2,4 +2,14 @@
     <string name="app_name">墨境</string>
     <string name="app_name_full">墨境 · 彩色墨水屏模式</string>
     <string name="app_name_en">Inkwell</string>
+
+    <!-- 长按 App 图标的静态快捷方式 -->
+    <string name="shortcut_toggle_short">开/关</string>
+    <string name="shortcut_toggle_long">开启或关闭墨水屏</string>
+    <string name="shortcut_original_short">原色</string>
+    <string name="shortcut_original_long">恢复默认显示（原色）</string>
+    <string name="shortcut_color_short">彩纸</string>
+    <string name="shortcut_color_long">切换到彩纸模式</string>
+    <string name="shortcut_ink_short">墨纸</string>
+    <string name="shortcut_ink_long">切换到墨纸模式</string>
 </resources>

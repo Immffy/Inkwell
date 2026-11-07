@@ -45,6 +45,7 @@ versionCode = MAJOR × 10000 + MINOR × 100 + PATCH
 | 0.2.0 | 200 |
 | 0.2.1 | 201 |
 | 0.2.2 | 202 |
+| 0.2.3 | 203 |
 | 0.2.9 | 209 |
 | 0.9.0 | 900 |
 | 0.10.0 | 1000 |
@@ -65,7 +66,7 @@ val versionPatch = 0
 val versionSuffix = ""   // 预发布填 "-beta.1"，正式版留空
 ```
 
-`versionCode`、APK 文件名（`墨境-v0.1.0-debug.apk`）、
+`versionCode`、APK 文件名（`墨境-v0.2.3.apk`）、
 App 内显示的版本，全部自动生成。
 
 ---

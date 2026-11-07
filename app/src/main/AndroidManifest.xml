@@ -31,14 +31,53 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 静态快捷方式：装完就有，长按桌面图标即可出现，无需先打开一次 App -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!--
+          透明快捷动作执行器。
+          桌面图标 / 长按快捷方式 / 通知栏 Action 都指向它，
+          执行完立刻 finish()，不显示任何界面。
+        -->
+        <activity
+            android:name=".QuickActionActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="com.inkwell.mode.QUICK_ACTION" />
+                <action android:name="com.inkwell.mode.QUICK_ACTION.toggle" />
+                <action android:name="com.inkwell.mode.QUICK_ACTION.original" />
+                <action android:name="com.inkwell.mode.QUICK_ACTION.color_paper" />
+                <action android:name="com.inkwell.mode.QUICK_ACTION.ink_paper" />
+                <action android:name="com.inkwell.mode.QUICK_ACTION.restore" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <activity
-            android:name=".PresetActivity"
+            android:name=".QuickActivity"
             android:exported="false"
-            android:label="显示模式"
+            android:label="快捷按钮"
             android:parentActivityName=".MainActivity"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".PresetActivity"
+            android:exported="true"
+            android:label="显示模式"
+            android:parentActivityName=".MainActivity"
+            android:screenOrientation="portrait">
+            <!-- 长按 QS 磁贴 → 直接进三模选择页（系统跨进程调用，需 exported） -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".RulesActivity"
@@ -54,7 +93,12 @@
             android:parentActivityName=".MainActivity"
             android:screenOrientation="portrait" />
 
-        <!-- 通知栏快捷开关：不用打开 App 就能恢复原色 -->
+        <!--
+          控制中心快捷开关（系统快捷开关）：不用打开 App 就能切模式。
+          TOGGLEABLE + CATEGORY_DISPLAY 让 Android 13+ 把它当「显示类开关」渲染，
+          和护眼模式、深色模式同组同样式；老版本忽略这两个 meta-data，行为不变。
+          长按走 QS_TILE_PREFERENCES → PresetActivity（已在上面声明）。
+        -->
         <service
             android:name=".EinkTileService"
             android:exported="true"
@@ -64,6 +108,12 @@
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+            <meta-data
+                android:name="android.service.quicksettings.TILE_CATEGORY"
+                android:value="android.service.quicksettings.CATEGORY_DISPLAY" />
         </service>
 
         <!-- 遮罩引擎（零依赖降级方案）：无 root / 无 Shizuku 时使用 -->

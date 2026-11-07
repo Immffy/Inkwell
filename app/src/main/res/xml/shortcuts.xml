@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      静态快捷方式：安装完就有，不需要打开一次 App 才注册。
+      澎湃 OS 桌面长按图标会读取这里；也可以把某一项直接拖到桌面。
+      最多 4 个，超过 launcher 会截断。
+    -->
+
+    <shortcut
+        android:shortcutId="qs_toggle"
+        android:enabled="true"
+        android:icon="@drawable/ic_quick_toggle"
+        android:shortcutShortLabel="@string/shortcut_toggle_short"
+        android:shortcutLongLabel="@string/shortcut_toggle_long">
+        <intent
+            android:action="com.inkwell.mode.QUICK_ACTION.toggle"
+            android:targetPackage="com.inkwell.mode"
+            android:targetClass="com.inkwell.mode.QuickActionActivity">
+            <extra
+                android:name="inkwell_action"
+                android:value="toggle" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="qs_original"
+        android:enabled="true"
+        android:icon="@drawable/ic_quick_original"
+        android:shortcutShortLabel="@string/shortcut_original_short"
+        android:shortcutLongLabel="@string/shortcut_original_long">
+        <intent
+            android:action="com.inkwell.mode.QUICK_ACTION.original"
+            android:targetPackage="com.inkwell.mode"
+            android:targetClass="com.inkwell.mode.QuickActionActivity">
+            <extra
+                android:name="inkwell_action"
+                android:value="original" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="qs_color"
+        android:enabled="true"
+        android:icon="@drawable/ic_quick_color"
+        android:shortcutShortLabel="@string/shortcut_color_short"
+        android:shortcutLongLabel="@string/shortcut_color_long">
+        <intent
+            android:action="com.inkwell.mode.QUICK_ACTION.color_paper"
+            android:targetPackage="com.inkwell.mode"
+            android:targetClass="com.inkwell.mode.QuickActionActivity">
+            <extra
+                android:name="inkwell_action"
+                android:value="color_paper" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="qs_ink"
+        android:enabled="true"
+        android:icon="@drawable/ic_quick_ink"
+        android:shortcutShortLabel="@string/shortcut_ink_short"
+        android:shortcutLongLabel="@string/shortcut_ink_long">
+        <intent
+            android:action="com.inkwell.mode.QUICK_ACTION.ink_paper"
+            android:targetPackage="com.inkwell.mode"
+            android:targetClass="com.inkwell.mode.QuickActionActivity">
+            <extra
+                android:name="inkwell_action"
+                android:value="ink_paper" />
+        </intent>
+    </shortcut>
+
+</shortcuts>

@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
             val next = !EinkPrefs.isEnabled(this)
             val r = ConfigStore.setEnabled(this, next)
             syncState()
+            QuickActions.refresh(this)
             toast(
                 if (next) "已开启，约 2 秒内生效"
                 else "已关闭，约 2 秒内恢复原色"
@@ -65,6 +66,7 @@ class MainActivity : AppCompatActivity() {
             EinkPrefs.setMode(this, DisplayMode.ORIGINAL)
             val r = ConfigStore.setEnabled(this, false)
             syncState()
+            QuickActions.refresh(this)
             toast(if (r.fileOk) "已恢复默认显示" else "配置文件写入失败，请查看诊断页")
         }
 
@@ -73,6 +75,9 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnRules).setOnClickListener {
             startActivity(android.content.Intent(this, RulesActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnQuick).setOnClickListener {
+            startActivity(android.content.Intent(this, QuickActivity::class.java))
         }
         findViewById<Button>(R.id.btnDiag).setOnClickListener {
             startActivity(android.content.Intent(this, DiagActivity::class.java))
@@ -93,6 +98,27 @@ class MainActivity : AppCompatActivity() {
             EinkPrefs.setInitialized(this)
         }
 
+        // 0.2.2 彩纸参数重校准：只把「从没手动调过、还停留在旧默认值」
+        // 的存档升级到新参数。用户拖过滑块的原样保留，一次性的。
+        if (!EinkPrefs.isCalibrated(this)) {
+            val old = EinkPrefs.load(this)
+            val untouchedOldDefault =
+                EinkPrefs.getMode(this) == DisplayMode.COLOR_PAPER &&
+                    Math.abs(old.saturation - 0.45f) < 0.001f &&
+                    Math.abs(old.black - 0.16f) < 0.001f &&
+                    Math.abs(old.white - 0.92f) < 0.001f &&
+                    Math.abs(old.warmth - 0.55f) < 0.001f
+            if (untouchedOldDefault) {
+                val p = DisplayMode.params(DisplayMode.COLOR_PAPER)
+                EinkPrefs.save(this, p)
+                EinkPrefs.setPreset(this, DisplayMode.COLOR_PAPER)
+                if (EinkPrefs.isEnabled(this)) {
+                    ConfigStore.saveAndApply(this, p, DisplayMode.COLOR_PAPER, true)
+                }
+            }
+            EinkPrefs.setCalibrated(this)
+        }
+
         syncState()
         checkStatus()
         // 让通知栏快捷开关的图标状态与实际同步
@@ -100,12 +126,15 @@ class MainActivity : AppCompatActivity() {
             this,
             ComponentName(this, EinkTileService::class.java)
         )
+        // 常驻通知的内容也要跟上最新模式（用户开了才显示）
+        try { QuickNotify.sync(this) } catch (_: Throwable) { }
     }
 
     override fun onResume() {
         super.onResume()
         syncState()
         checkStatus()
+        try { QuickNotify.sync(this) } catch (_: Throwable) { }
     }
 
     private fun syncState() {

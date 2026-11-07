@@ -78,20 +78,26 @@ object PropConfig {
         return get(P_ENABLED, "1") == "1"
     }
 
-    /** 读取当前生效参数（含纸色暖度） */
+    /**
+     * 读取当前生效参数（含纸色暖度）。
+     *
+     * 无配置时的回退基准用 PAPER_COLOR（0.2.2 校准值），而不是旧的 KALEIDO3。
+     * 这样模块刚启动、还没收到任何指令时，也不会先闪一下旧的灰淡彩。
+     * 显式选了进阶档（preset 非空）的仍按 presetList() 里的原值，不受影响。
+     */
     fun loadParams(): EinkParams {
         pushedSat?.let { s ->
             return EinkParams(
                 saturation = s,
-                black = pushedBlack ?: EinkParams.KALEIDO3.black,
-                white = pushedWhite ?: EinkParams.KALEIDO3.white,
-                warmth = pushedWarmth ?: 0f
+                black = pushedBlack ?: EinkParams.PAPER_COLOR.black,
+                white = pushedWhite ?: EinkParams.PAPER_COLOR.white,
+                warmth = pushedWarmth ?: EinkParams.PAPER_COLOR.warmth
             )
         }
 
         val conf = ControlContract.read()
         if (conf.hasParams()) {
-            val base = if (conf.preset.isNotBlank()) EinkParams.byName(conf.preset) else EinkParams.KALEIDO3
+            val base = if (conf.preset.isNotBlank()) EinkParams.byName(conf.preset) else EinkParams.PAPER_COLOR
             return EinkParams(
                 saturation = conf.sat ?: base.saturation,
                 black = conf.black ?: base.black,
@@ -102,7 +108,7 @@ object PropConfig {
 
         // 回落到 SystemProperties
         val preset = get(P_PRESET, "")
-        val base = if (preset.isNotBlank()) EinkParams.byName(preset) else EinkParams.KALEIDO3
+        val base = if (preset.isNotBlank()) EinkParams.byName(preset) else EinkParams.PAPER_COLOR
         return EinkParams(
             saturation = get(P_SAT, "").toFloatOrNull() ?: base.saturation,
             black = get(P_BLACK, "").toFloatOrNull() ?: base.black,
